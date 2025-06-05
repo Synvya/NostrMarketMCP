@@ -1,0 +1,87 @@
+{
+    // ─────────────────────────────────────────────
+    // 1. Scope & goals
+    // ─────────────────────────────────────────────
+    "goal": [
+        "Implement NostrMarketMCP: an MCP-over-Nostr bridge for Synvya Retail Commerce.",
+        "It ingests Synvya-published Nostr events ➜ persists them ➜ exposes them via an MCP server so AI agents can read resources and call tools."
+    ],
+    // ─────────────────────────────────────────────
+    // 2. Ordered task list
+    // ─────────────────────────────────────────────
+    "tasks": [
+        // ── A. Project skeleton ────────────────────
+        {
+            "type": "create_files",
+            "files": {
+                "pyproject.toml": "[deps: synvya_sdk>=0.5, python-mcp-sdk>=0.4, python-nostr>=1.5, fastapi, uvicorn[standard], pydantic, sqlite]",
+                "README.md": "# NostrMarketMCP\nBridge that turns Synvya-format Nostr commerce events into an MCP server."
+            }
+        },
+        // ── B. Database layer (SQLite) ─────────────
+        {
+            "type": "create_module",
+            "path": "nostr_market_mcp/db.py",
+            "description": "Thin wrapper for SQLite with helpers: upsert_event, get_resource_rows, get_resource_data"
+        },
+        // ── C. Nostr ingestion worker ──────────────
+        {
+            "type": "create_module",
+            "path": "nostr_market_mcp/ingest.py",
+            "description": "Async worker using synvya_sdk.nostr.NostrClient to subscribe to kinds 0, 30017, 30018 and write to DB."
+        },
+        // ── D. MCP server implementation ───────────
+        {
+            "type": "create_module",
+            "path": "nostr_market_mcp/server.py",
+            "description": "Expose resources and tools through python-mcp-sdk. Map handlers to DB queries and Square helper functions."
+        },
+        // ── E. Square actions wrapper ──────────────
+        {
+            "type": "create_module",
+            "path": "nostr_market_mcp/square_actions.py",
+            "description": "Use synvya_sdk + Square APIs to implement create_order, update_inventory, get_order_status."
+        },
+        // ── F. Bootstrap CLI entry point ───────────
+        {
+            "type": "create_module",
+            "path": "nostr_market_mcp/__main__.py",
+            "description": "Click-based CLI: migrate DB, run ingestion worker, start MCP server."
+        }
+    ],
+    // ─────────────────────────────────────────────
+    // 3. Coding standards
+    // ─────────────────────────────────────────────
+    "style": {
+        "language": "python",
+        "checks": [
+            "ruff",
+            "black",
+            "mypy"
+        ],
+        "docstrings": "google",
+        "typing": "strict"
+    },
+    // ─────────────────────────────────────────────
+    // 4. Acceptance criteria
+    // ─────────────────────────────────────────────
+    "done_when": [
+        "» `poetry install && poetry run nostr-market-mcp --help` works.",
+        "» Running the CLI with `--ingest` and a test merchant pubkey ingests events into `ingest.db`.",
+        "» `curl localhost:8000/mcp/resources/list` returns profile and catalog URIs.",
+        "» `curl .../resources/read?uri=nostr://<npub>/catalog` streams JSON with ≥ 1 product.",
+        "» `tools/list` advertises search_products & create_order with correct JSON Schema.",
+        "» `pytest` passes for unit tests covering DB upsert logic, resource read, and a mock Square order."
+    ],
+    // ─────────────────────────────────────────────
+    // 5. Notes & references
+    // ─────────────────────────────────────────────
+    "notes": [
+        "▪ Use `synvya_sdk.nostr.NostrClient` (async) to connect to multiple relays; create with `await NostrClient.create(relays)`.",
+        "▪ Replaceable-event primary key = (kind, pubkey, d-tag); keep the record with the newest `created_at`.",
+        "▪ Resource URI patterns:\n   - nostr://{npub}/profile\n   - nostr://{npub}/catalog\n   - nostr://{npub}/product/{d}",
+        "▪ Paginate catalog >1 MB via RFC 6570: nostr://{npub}/catalog/{page}",
+        "▪ Forward each DB insert to MCP clients with notifications/resources/updated.",
+        "▪ Protect HTTP transport with bearer-token middleware; env var `MCP_BEARER`."
+    ]
+}

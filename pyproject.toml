@@ -1,0 +1,55 @@
+[tool.poetry]
+name = "nostr-profile-mcp"
+version = "0.1.0"
+description = "Bridge that turns Nostr profile events into an MCP server for AI agents"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "nostr_market_mcp"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+# These would be real dependencies in production
+# For development purposes, we'll mock these dependencies
+# synvya-sdk = ">=0.5"
+# python-mcp-sdk = ">=0.4"
+# python-nostr = ">=1.5"
+fastapi = "^0.104.0"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.4.2"
+click = "^8.1.7"
+aiosqlite = "^0.19.0"
+pytest-mock = "^3.14.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.3"
+black = "^23.10.1"
+mypy = "^1.6.1"
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+httpx = "^0.25.0"  # For TestClient
+
+[tool.poetry.scripts]
+nostr-profile-mcp = "nostr_market_mcp.__main__:main"
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api" 

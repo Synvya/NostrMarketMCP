@@ -1,0 +1,324 @@
+openapi: 3.1.0
+info:
+  title: Nostr Profiles API
+  description: API for searching and managing Nostr profile data, specifically business profiles with L/business.type tags
+  version: 1.0.0
+servers:
+  - url: https://yourdomain.com
+    description: Production server (update with your actual domain)
+paths:
+  /api/search_profiles:
+    post:
+      operationId: searchProfiles
+      summary: Search Nostr profiles by content
+      description: Search for Nostr profiles by content including name, about, nip05, and other metadata fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: The search term to look for in profile content
+                  example: "bitcoin developer"
+                limit:
+                  type: integer
+                  description: Maximum number of results to return
+                  default: 10
+                  minimum: 1
+                  maximum: 100
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search_business_profiles:
+    post:
+      operationId: searchBusinessProfiles
+      summary: Search business Nostr profiles
+      description: Search for business Nostr profiles with specific business type tags (L/business.type)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: Optional search term for profile content
+                  default: ""
+                  example: "coffee shop"
+                business_type:
+                  type: string
+                  description: Business type filter
+                  enum: ["", "retail", "restaurant", "services", "business", "entertainment", "other"]
+                  default: ""
+                limit:
+                  type: integer
+                  description: Maximum number of results to return
+                  default: 10
+                  minimum: 1
+                  maximum: 100
+      responses:
+        '200':
+          description: Business profile search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/profile/{pubkey}:
+    get:
+      operationId: getProfile
+      summary: Get profile by public key
+      description: Retrieve a specific Nostr profile by its public key
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The public key (hex string) of the profile to retrieve
+          example: "57d03534460df449321cde3757b1b379a8377bace8199101df0716e20dbb7991"
+      responses:
+        '200':
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  profile:
+                    $ref: '#/components/schemas/Profile'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/stats:
+    get:
+      operationId: getStats
+      summary: Get database statistics
+      description: Get statistics about the profile database including total counts and metadata
+      responses:
+        '200':
+          description: Database statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/business_types:
+    get:
+      operationId: getBusinessTypes
+      summary: Get available business types
+      description: Get the list of available business types for filtering business profiles
+      responses:
+        '200':
+          description: Available business types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessTypesResponse'
+
+  /api/refresh:
+    post:
+      operationId: refreshDatabase
+      summary: Refresh database from Nostr relays
+      description: Manually trigger a refresh of the database by searching for new business profiles from Nostr relays
+      responses:
+        '200':
+          description: Refresh completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Profile:
+      type: object
+      properties:
+        pubkey:
+          type: string
+          description: Public key of the profile
+          example: "57d03534460df449321cde3757b1b379a8377bace8199101df0716e20dbb7991"
+        name:
+          type: string
+          nullable: true
+          description: Display name
+          example: "alice"
+        display_name:
+          type: string
+          nullable: true
+          description: Full display name
+          example: "Alice Johnson"
+        about:
+          type: string
+          nullable: true
+          description: Profile description
+          example: "Bitcoin developer and coffee enthusiast"
+        picture:
+          type: string
+          nullable: true
+          description: Profile picture URL
+          example: "https://example.com/avatar.jpg"
+        banner:
+          type: string
+          nullable: true
+          description: Profile banner URL
+        website:
+          type: string
+          nullable: true
+          description: Website URL
+          example: "https://alice.dev"
+        nip05:
+          type: string
+          nullable: true
+          description: NIP-05 identifier
+          example: "alice@example.com"
+        bot:
+          type: boolean
+          nullable: true
+          description: Whether this is a bot account
+        business_type:
+          type: string
+          nullable: true
+          description: Type of business if this is a business profile
+          example: "restaurant"
+
+    SearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          description: Number of profiles returned
+          example: 5
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Profile'
+        query:
+          type: string
+          nullable: true
+          description: The search query that was used
+          example: "bitcoin developer"
+
+    StatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        stats:
+          type: object
+          description: Database statistics
+          properties:
+            total_profiles:
+              type: integer
+              example: 1250
+            profiles_with_name:
+              type: integer
+              example: 980
+            profiles_with_display_name:
+              type: integer
+              example: 650
+            profiles_with_about:
+              type: integer
+              example: 890
+            profiles_with_picture:
+              type: integer
+              example: 780
+            profiles_with_nip05:
+              type: integer
+              example: 340
+            profiles_with_website:
+              type: integer
+              example: 290
+            last_updated:
+              type: string
+              nullable: true
+              description: Last update timestamp
+              example: "2024-01-15T10:30:00Z"
+
+    BusinessTypesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        business_types:
+          type: array
+          items:
+            type: string
+          example: ["retail", "restaurant", "services", "business", "entertainment", "other"]
+        description:
+          type: string
+          example: "Available values for business_type parameter in search_business_profiles"
+
+    RefreshResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Database refresh completed"
+        current_stats:
+          type: object
+          description: Updated database statistics after refresh
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "Profile not found" 

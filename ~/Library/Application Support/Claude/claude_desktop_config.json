@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "nostr-profiles": {
+            "command": "/Users/alejandro/.venvs/aienv/bin/python",
+            "args": [
+                "nostr_profiles_mcp_server.py"
+            ],
+            "cwd": "/Users/alejandro/Synvya/NostrMarketMCP",
+            "env": {
+                "PATH": "/Users/alejandro/.venvs/aienv/bin:/usr/local/bin:/usr/bin:/bin",
+                "PYTHONPATH": "/Users/alejandro/Synvya/NostrMarketMCP"
+            }
+        }
+    }
+}
