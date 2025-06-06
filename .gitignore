@@ -162,4 +162,11 @@ logs/
 # Application specific
 data/
 ssl/
-certs/ 
+certs/
+
+# Internal documentation files (not for public sync)
+SECURITY_INCIDENT_RESPONSE.md
+SECURITY_RESPONSE.md
+SECURITY_IMPLEMENTATION.md
+AWS_DEPLOYMENT.md
+OPENAI_INTEGRATION.md 
