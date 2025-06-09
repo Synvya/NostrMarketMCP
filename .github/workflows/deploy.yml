@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+
+env:
+  IMAGE_TAG: ${{ github.ref_name }}
+  
 jobs:
   deploy:
     name: Build and Deploy Container
