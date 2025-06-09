@@ -129,8 +129,6 @@ dmypy.json
 .pyre/
 
 # Security sensitive files
-*.pem
-*.key
 *.crt
 *.p12
 *.pfx
@@ -170,3 +168,4 @@ SECURITY_RESPONSE.md
 SECURITY_IMPLEMENTATION.md
 AWS_DEPLOYMENT.md
 OPENAI_INTEGRATION.md 
+TESTING_GUIDE.md

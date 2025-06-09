@@ -124,17 +124,39 @@ async def get_authenticated_user(
     ),
 ):
     """Verify authentication credentials."""
+    api_key_valid = False
+    bearer_token_valid = False
+
+    # Try API key authentication
     try:
-        # Check API key authentication
         await auth.verify_api_key(request)
-
-        # Check Bearer token authentication
-        await auth.verify_bearer_token(credentials)
-
-        return True
+        api_key_valid = True
     except Exception as e:
-        logger.warning(f"Authentication failed: {e}")
-        raise
+        logger.debug(f"API key authentication failed: {e}")
+
+    # Try Bearer token authentication
+    try:
+        await auth.verify_bearer_token(credentials)
+        bearer_token_valid = True
+    except Exception as e:
+        logger.debug(f"Bearer token authentication failed: {e}")
+
+    # If either authentication method succeeded, allow access
+    if api_key_valid or bearer_token_valid:
+        return True
+
+    # If both methods are configured but both failed, raise error
+    if SECURITY_CONFIG["API_KEY"] and SECURITY_CONFIG["BEARER_TOKEN"]:
+        raise HTTPException(
+            status_code=401, detail="Valid API key or Bearer token required"
+        )
+    elif SECURITY_CONFIG["API_KEY"]:
+        raise HTTPException(status_code=401, detail="Valid API key required")
+    elif SECURITY_CONFIG["BEARER_TOKEN"]:
+        raise HTTPException(status_code=401, detail="Valid Bearer token required")
+    else:
+        # No authentication configured
+        return True
 
 
 # Database dependency
