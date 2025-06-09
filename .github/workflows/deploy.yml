@@ -36,7 +36,7 @@ jobs:
       - name: Download ECS task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ secrets.ECS_SERVICE }} \
+            --task-definition ${{ secrets.TASK_FAMILY }} \
             --query taskDefinition \
             --output json > task-def.json
 
