@@ -3,8 +3,7 @@ name: Deploy to ECS (nostr-profiles-api)
 on:
   push:
     tags:
-      - 'v*.*.*'
-  workflow_dispatch:
+      - 'v*'
 jobs:
   deploy:
     name: Build and Deploy Container
