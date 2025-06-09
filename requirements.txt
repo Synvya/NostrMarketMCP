@@ -5,6 +5,12 @@ pydantic==2.5.0
 aiosqlite==0.19.0
 click==8.1.7
 
+# MCP SDK for refresh functionality
+mcp>=1.0.0
+
+# Synvya SDK for Nostr functionality
+synvya-sdk>=0.2.4
+
 # Security and rate limiting
 slowapi==0.1.9
 python-multipart==0.0.6
