@@ -287,7 +287,7 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
         # Import refresh functionality
         from nostr_profiles_mcp_server import refresh_database
 
-        await refresh_database()
+        await refresh_database(database)
 
         stats = await database.get_profile_stats()
         return RefreshResponse(

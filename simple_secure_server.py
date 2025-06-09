@@ -167,6 +167,12 @@ async def get_database() -> Database:
         db = Database(DEFAULT_DB_PATH)
         await db.initialize()
         logger.info(f"Database initialized: {DEFAULT_DB_PATH}")
+
+        # Share the database instance with the MCP server
+        from nostr_profiles_mcp_server import set_shared_database
+
+        set_shared_database(db)
+
     return db
 
 

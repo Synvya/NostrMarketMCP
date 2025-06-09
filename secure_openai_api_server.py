@@ -157,9 +157,21 @@ async def get_database() -> Database:
     """Get database instance, creating if necessary."""
     global db
     if db is None:
-        db = Database(DEFAULT_DB_PATH)
-        await db.initialize()
-        logger.info("Database initialized", path=DEFAULT_DB_PATH)
+        db = await initialize_database()
+    return db
+
+
+async def initialize_database():
+    """Initialize the database."""
+    db = Database(DEFAULT_DB_PATH)
+    await db.initialize()
+    logger.info(f"Database initialized: {DEFAULT_DB_PATH}")
+
+    # Share the database instance with the MCP server
+    from nostr_profiles_mcp_server import set_shared_database
+
+    set_shared_database(db)
+
     return db
 
 
@@ -447,6 +459,11 @@ async def refresh_profiles_from_nostr(
 
         stats = await database.get_profile_stats()
         logger.info("Manual refresh completed", stats=stats)
+
+        # Share the database instance with the MCP server
+        from nostr_profiles_mcp_server import set_shared_database
+
+        set_shared_database(database)
 
         return RefreshResponse(
             success=True, message="Database refresh completed", current_stats=stats

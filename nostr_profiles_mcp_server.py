@@ -58,12 +58,20 @@ refresh_task: Optional[asyncio.Task] = None
 nostr_client: Optional[NostrClient] = None
 
 
+def set_shared_database(database: Database):
+    """Set the shared database instance to be used by the MCP server."""
+    global db
+    db = database
+    logger.info("MCP server using shared database instance")
+
+
 async def initialize_db():
     """Initialize the database connection."""
     global db
-    db = Database(DEFAULT_DB_PATH)
-    await db.initialize()
-    logger.info(f"Database initialized at {DEFAULT_DB_PATH}")
+    if db is None:
+        db = Database(DEFAULT_DB_PATH)
+        await db.initialize()
+        logger.info(f"Database initialized at {DEFAULT_DB_PATH}")
 
     # Start the initial refresh and periodic refresh task
     await refresh_database()  # Initial refresh at startup
