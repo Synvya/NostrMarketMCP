@@ -3,9 +3,11 @@
 Provides a thin wrapper for SQLite with helpers for event storage and resource querying.
 """
 
+import hashlib
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -197,12 +199,19 @@ class Database:
 
         try:
             if resource_type == "profile":
-                # Get merchant profile
-                async with self._conn.execute(SQL_GET_PROFILE, (pubkey,)) as cursor:
+                # Get merchant profile with created_at timestamp
+                async with self._conn.execute(
+                    "SELECT content, created_at FROM events WHERE kind = 0 AND pubkey = ? ORDER BY created_at DESC LIMIT 1",
+                    (pubkey,),
+                ) as cursor:
                     row = await cursor.fetchone()
                     if not row:
                         return None
-                    return json.loads(row[0])
+                    profile_data = json.loads(row[0])
+                    profile_data["created_at"] = row[
+                        1
+                    ]  # Add created_at to the profile data
+                    return profile_data
 
             elif resource_type == "catalog":
                 # Get product catalog
@@ -576,3 +585,122 @@ class Database:
         except sqlite3.Error as e:
             logger.error(f"Database error when searching business profiles: {e}")
             return []
+
+    async def upsert_profile(self, profile_data: Dict[str, Any]) -> bool:
+        """Upsert a profile by converting structured profile data to Nostr event format.
+
+        Args:
+            profile_data: Dictionary containing profile information with keys like:
+                         public_key, name, display_name, about, website, picture, etc.
+
+        Returns:
+            bool: True if the profile was successfully stored, False otherwise
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            # Extract required fields
+            public_key = profile_data.get("public_key")
+            if not public_key:
+                logger.error("Profile data missing required 'public_key' field")
+                return False
+
+            # Extract metadata fields for the content JSON
+            content_fields = {
+                "name": profile_data.get("name", ""),
+                "display_name": profile_data.get("display_name", ""),
+                "about": profile_data.get("about", ""),
+                "website": profile_data.get("website", ""),
+                "picture": profile_data.get("picture", ""),
+                "banner": profile_data.get("banner", ""),
+                "nip05": profile_data.get("nip05", ""),
+                "lud16": profile_data.get("lud16", ""),
+            }
+
+            # Remove empty fields to keep content clean
+            content = {k: v for k, v in content_fields.items() if v}
+
+            # Build tags from profile data
+            tags = []
+
+            # Add business type tags if present
+            if profile_data.get("namespace") == "business.type":
+                tags.append(["L", "business.type"])
+                if profile_data.get("profile_type"):
+                    tags.append(["l", profile_data.get("profile_type")])
+
+            # Add hashtags if present
+            hashtags = profile_data.get("hashtags", [])
+            if hashtags:
+                for hashtag in hashtags:
+                    if hashtag:  # Skip empty hashtags
+                        tags.append(["t", hashtag])
+
+            # Add location tags if present
+            locations = profile_data.get("locations", [])
+            if locations:
+                for location in locations:
+                    if location:  # Skip empty locations
+                        tags.append(["g", location])
+
+            # Use last_updated if provided, otherwise use current time
+            created_at = profile_data.get("last_updated", int(time.time()))
+
+            # Generate a unique event ID (simplified approach)
+            event_id = hashlib.sha256(
+                f"{public_key}:0:{created_at}".encode()
+            ).hexdigest()
+
+            # Store as a kind 0 (profile) event
+            return await self.upsert_event(
+                id=event_id,
+                pubkey=public_key,
+                kind=0,  # Profile event kind
+                content=json.dumps(content),
+                created_at=created_at,
+                tags=tags,
+            )
+
+        except Exception as e:
+            logger.error(f"Error upserting profile: {e}")
+            return False
+
+    async def get_business_types(self) -> List[str]:
+        """Get the available business types for filtering business profiles.
+
+        Returns:
+            List[str]: List of available business type values
+        """
+        return [
+            "retail",
+            "restaurant",
+            "services",
+            "business",
+            "entertainment",
+            "other",
+        ]
+
+    async def clear_all_data(self) -> bool:
+        """Clear all data from the database.
+
+        Returns:
+            bool: True if successful, False otherwise
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            await self._conn.execute("DELETE FROM events")
+            await self._conn.commit()
+            logger.info("Cleared all data from database")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error clearing database: {e}")
+            return False

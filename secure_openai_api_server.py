@@ -26,16 +26,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, ValidationError
-from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-# Load environment variables
-load_dotenv()
-
-# Import our security module and database
-sys.path.insert(0, str(Path(__file__).parent))
 from nostr_market_mcp.db import Database
+from nostr_profiles_mcp_server import refresh_database, set_shared_database
 from security import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
@@ -48,6 +43,13 @@ from security import (
     rate_limit,
     security_middleware,
 )
+
+# Load environment variables
+load_dotenv()
+
+# Import our security module and database
+sys.path.insert(0, str(Path(__file__).parent))
+
 
 # Configure structured logging
 structlog.configure(
@@ -168,8 +170,6 @@ async def initialize_database():
     logger.info(f"Database initialized: {DEFAULT_DB_PATH}")
 
     # Share the database instance with the MCP server
-    from nostr_profiles_mcp_server import set_shared_database
-
     set_shared_database(db)
 
     return db
@@ -453,7 +453,6 @@ async def refresh_profiles_from_nostr(
         logger.info("Manual refresh triggered")
 
         # Import refresh functionality
-        from nostr_profiles_mcp_server import refresh_database
 
         await refresh_database()
 
@@ -461,8 +460,6 @@ async def refresh_profiles_from_nostr(
         logger.info("Manual refresh completed", stats=stats)
 
         # Share the database instance with the MCP server
-        from nostr_profiles_mcp_server import set_shared_database
-
         set_shared_database(database)
 
         return RefreshResponse(

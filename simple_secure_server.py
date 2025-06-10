@@ -33,6 +33,7 @@ from security_simple import (
     rate_limiter,
     security_middleware,
 )
+from shared_database import get_shared_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -161,19 +162,8 @@ async def get_authenticated_user(
 
 # Database dependency
 async def get_database() -> Database:
-    """Get database instance, creating if necessary."""
-    global db
-    if db is None:
-        db = Database(DEFAULT_DB_PATH)
-        await db.initialize()
-        logger.info(f"Database initialized: {DEFAULT_DB_PATH}")
-
-        # Share the database instance with the MCP server
-        from nostr_profiles_mcp_server import set_shared_database
-
-        set_shared_database(db)
-
-    return db
+    """Get shared database instance."""
+    return await get_shared_database()
 
 
 # Response models

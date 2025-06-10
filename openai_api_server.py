@@ -19,6 +19,8 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from nostr_profiles_mcp_server import refresh_database
+
 # Import our existing MCP server functionality
 sys.path.insert(0, str(Path(__file__).parent))
 from nostr_market_mcp.db import Database
@@ -285,9 +287,8 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
     """
     try:
         # Import refresh functionality
-        from nostr_profiles_mcp_server import refresh_database
 
-        await refresh_database(database)
+        await refresh_database()
 
         stats = await database.get_profile_stats()
         return RefreshResponse(
