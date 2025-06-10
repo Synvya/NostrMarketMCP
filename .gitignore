@@ -170,5 +170,9 @@ AWS_DEPLOYMENT.md
 OPENAI_INTEGRATION.md 
 TESTING_GUIDE.md
 LOCAL_DEV_GUIDE.md
+
+# Local testing
 run_local.py
 test_local.py
+test_container_local.sh
+test_api_endpoints.sh

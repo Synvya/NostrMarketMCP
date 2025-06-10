@@ -5,6 +5,7 @@ Ensures both servers use the exact same database connection.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -12,8 +13,10 @@ from nostr_market_mcp.db import Database
 
 logger = logging.getLogger(__name__)
 
-# Default database path
-DEFAULT_DB_PATH = Path.home() / ".nostr_profiles.db"
+# Default database path - respect DATABASE_PATH environment variable
+DEFAULT_DB_PATH = Path(
+    os.getenv("DATABASE_PATH", str(Path.home() / ".nostr_profiles.db"))
+)
 
 # Global shared database instance
 _shared_db: Optional[Database] = None
