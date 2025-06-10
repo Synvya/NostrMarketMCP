@@ -549,8 +549,42 @@ async def refresh_database():
         # Update database with profile information
         for profile in profiles:
             try:
-                pubkey = profile.get_public_key()
-                new_created_at = profile.get_created_at()
+                # The Profile objects from async_get_merchants() already have identity tag parsing done
+                # Get all profile fields from the populated Profile object
+                profile_data = {
+                    "public_key": profile.get_public_key("hex"),
+                    "display_name": profile.display_name,
+                    "name": profile.name,
+                    "about": profile.about,
+                    "picture": profile.picture,
+                    "banner": profile.banner,
+                    "nip05": profile.nip05,
+                    "website": profile.website,
+                    "email": profile.email,  # Already parsed from i-tags by synvya-sdk
+                    "phone": profile.phone,  # Already parsed from i-tags by synvya-sdk
+                    "street": profile.street,  # Already parsed from i-tags location by synvya-sdk
+                    "city": profile.city,  # Already parsed from i-tags location by synvya-sdk
+                    "state": profile.state,  # Already parsed from i-tags location by synvya-sdk
+                    "zip_code": profile.zip_code,  # Already parsed from i-tags location by synvya-sdk
+                    "country": profile.country,  # Already parsed from i-tags location by synvya-sdk
+                    "hashtags": profile.hashtags,
+                    "locations": profile.locations,
+                    "bot": profile.bot,
+                    "nip05_validated": profile.nip05_validated,
+                    "namespace": profile.namespace,
+                    "profile_type": (
+                        profile.profile_type.value if profile.profile_type else None
+                    ),
+                    "business_type": (
+                        profile.profile_type.value if profile.profile_type else None
+                    ),  # Use profile_type as business_type
+                    "tags": profile.tags,
+                    "created_at": profile.get_created_at(),
+                    "last_updated": profile.get_created_at(),
+                }
+
+                pubkey = profile_data["public_key"]
+                new_created_at = profile_data["created_at"]
 
                 # Check if profile already exists in database
                 resource_uri = f"nostr://{pubkey}/profile"
@@ -559,7 +593,6 @@ async def refresh_database():
                 should_update = True
                 if existing_profile:
                     # Get existing created_at from the database
-                    # Check if the database has created_at or use 0 as fallback
                     existing_created_at = existing_profile.get("created_at", 0)
 
                     if new_created_at == existing_created_at:
@@ -576,35 +609,9 @@ async def refresh_database():
                         )
 
                 if should_update:
-                    # Extract profile data for database storage
-                    profile_data = {
-                        "public_key": pubkey,
-                        "name": profile.get_name(),
-                        "display_name": profile.get_display_name(),
-                        "about": profile.get_about(),
-                        "website": profile.get_website(),
-                        "picture": profile.get_picture(),
-                        "banner": profile.get_banner(),
-                        "nip05": profile.get_nip05(),
-                        "nip05_validated": profile.nip05_validated,
-                        "namespace": profile.get_namespace(),
-                        "profile_type": profile.get_profile_type().value,
-                        "hashtags": list(profile.get_hashtags()),
-                        "locations": list(profile.locations),
-                        "email": profile.get_email(),
-                        "phone": profile.get_phone(),
-                        "street": profile.get_street(),
-                        "city": profile.get_city(),
-                        "state": profile.get_state(),
-                        "country": profile.get_country(),
-                        "zip_code": profile.get_zip_code(),
-                        "bot": profile.is_bot(),
-                        "last_updated": new_created_at,  # Use actual created_at from profile
-                    }
-
-                    # Upsert profile data into database
-                    success = await db.upsert_profile(profile_data)
-                    if success:
+                    # Store profile data
+                    result = await db.upsert_profile(resource_uri, profile_data)
+                    if result:
                         profile_count += 1
                         action = "Updated" if existing_profile else "Stored"
                         logger.debug(

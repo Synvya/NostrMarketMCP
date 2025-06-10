@@ -202,9 +202,9 @@ class Database:
 
         try:
             if resource_type == "profile":
-                # Get merchant profile with created_at timestamp
+                # Get merchant profile with created_at timestamp and tags for business_type
                 async with self._conn.execute(
-                    "SELECT content, created_at FROM events WHERE kind = 0 AND pubkey = ? ORDER BY created_at DESC LIMIT 1",
+                    "SELECT content, created_at, tags FROM events WHERE kind = 0 AND pubkey = ? ORDER BY created_at DESC LIMIT 1",
                     (pubkey,),
                 ) as cursor:
                     row = await cursor.fetchone()
@@ -214,6 +214,30 @@ class Database:
                     profile_data["created_at"] = row[
                         1
                     ]  # Add created_at to the profile data
+
+                    # Extract business_type from tags if present
+                    if row[2]:  # Check if tags exist
+                        tags = json.loads(row[2])
+                        business_type = None
+                        for tag in tags:
+                            if (
+                                len(tag) >= 2
+                                and tag[0] == "l"
+                                and tag[1]
+                                in [
+                                    "retail",  # ProfileType.RETAIL
+                                    "restaurant",  # ProfileType.RESTAURANT
+                                    "service",  # ProfileType.SERVICE
+                                    "business",  # ProfileType.BUSINESS
+                                    "entertainment",  # ProfileType.ENTERTAINMENT
+                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
+                                    "other",  # ProfileType.OTHER
+                                ]
+                            ):
+                                business_type = tag[1]
+                                break
+                        profile_data["business_type"] = business_type
+
                     return profile_data
 
             elif resource_type == "catalog":
@@ -388,7 +412,28 @@ class Database:
                             or query in about
                             or query in nip05
                         ):
+                            # Extract business_type from tags if present
+                            business_type = None
+                            for tag in tags:
+                                if (
+                                    len(tag) >= 2
+                                    and tag[0] == "l"
+                                    and tag[1]
+                                    in [
+                                        "retail",  # ProfileType.RETAIL
+                                        "restaurant",  # ProfileType.RESTAURANT
+                                        "service",  # ProfileType.SERVICE
+                                        "business",  # ProfileType.BUSINESS
+                                        "entertainment",  # ProfileType.ENTERTAINMENT
+                                        "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
+                                        "other",  # ProfileType.OTHER
+                                    ]
+                                ):
+                                    business_type = tag[1]
+                                    break
+
                             profile_data["pubkey"] = pubkey
+                            profile_data["business_type"] = business_type
                             profile_data["tags"] = tags
                             results.append(profile_data)
                     except json.JSONDecodeError:
@@ -434,8 +479,29 @@ class Database:
                         created_at = row[2]
                         tags = json.loads(row[3])
 
+                        # Extract business_type from tags if present
+                        business_type = None
+                        for tag in tags:
+                            if (
+                                len(tag) >= 2
+                                and tag[0] == "l"
+                                and tag[1]
+                                in [
+                                    "retail",  # ProfileType.RETAIL
+                                    "restaurant",  # ProfileType.RESTAURANT
+                                    "service",  # ProfileType.SERVICE
+                                    "business",  # ProfileType.BUSINESS
+                                    "entertainment",  # ProfileType.ENTERTAINMENT
+                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
+                                    "other",  # ProfileType.OTHER
+                                ]
+                            ):
+                                business_type = tag[1]
+                                break
+
                         profile_data["pubkey"] = pubkey
                         profile_data["created_at"] = created_at
+                        profile_data["business_type"] = business_type
                         profile_data["tags"] = tags
                         results.append(profile_data)
                     except json.JSONDecodeError:
@@ -541,12 +607,13 @@ class Database:
                                 if tag[0] == "L" and tag[1] == "business.type":
                                     has_business_type_tag = True
                                 elif tag[0] == "l" and tag[1] in [
-                                    "retail",
-                                    "restaurant",
-                                    "services",
-                                    "business",
-                                    "entertainment",
-                                    "other",
+                                    "retail",  # ProfileType.RETAIL
+                                    "restaurant",  # ProfileType.RESTAURANT
+                                    "service",  # ProfileType.SERVICE
+                                    "business",  # ProfileType.BUSINESS
+                                    "entertainment",  # ProfileType.ENTERTAINMENT
+                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
+                                    "other",  # ProfileType.OTHER
                                 ]:
                                     profile_business_type = tag[1]
 
@@ -612,20 +679,36 @@ class Database:
                 logger.error("Profile data missing required 'public_key' field")
                 return False
 
-            # Extract metadata fields for the content JSON
+            # Extract ALL profile fields for the content JSON (matching synvya-sdk Profile model)
             content_fields = {
-                "name": profile_data.get("name", ""),
-                "display_name": profile_data.get("display_name", ""),
                 "about": profile_data.get("about", ""),
-                "website": profile_data.get("website", ""),
-                "picture": profile_data.get("picture", ""),
                 "banner": profile_data.get("banner", ""),
+                "bot": profile_data.get("bot", False),
+                "city": profile_data.get("city", ""),
+                "country": profile_data.get("country", ""),
+                "created_at": profile_data.get("created_at", 0),
+                "display_name": profile_data.get("display_name", ""),
+                "email": profile_data.get("email", ""),
+                "hashtags": profile_data.get("hashtags", []),
+                "locations": profile_data.get("locations", []),
+                "name": profile_data.get("name", ""),
+                "namespace": profile_data.get("namespace", ""),
                 "nip05": profile_data.get("nip05", ""),
+                "nip05_validated": profile_data.get("nip05_validated", False),
+                "picture": profile_data.get("picture", ""),
+                "phone": profile_data.get("phone", ""),
+                "profile_type": profile_data.get("profile_type", ""),
+                "profile_url": profile_data.get("profile_url", ""),
+                "state": profile_data.get("state", ""),
+                "street": profile_data.get("street", ""),
+                "website": profile_data.get("website", ""),
+                "zip_code": profile_data.get("zip_code", ""),
+                # Legacy fields for backward compatibility
                 "lud16": profile_data.get("lud16", ""),
             }
 
-            # Remove empty fields to keep content clean
-            content = {k: v for k, v in content_fields.items() if v}
+            # Store all fields (including empty ones for complete data)
+            content = content_fields
 
             # Build tags from profile data
             tags = []
@@ -681,9 +764,10 @@ class Database:
         return [
             "retail",
             "restaurant",
-            "services",
+            "service",
             "business",
             "entertainment",
+            "gamer_dadjoke",
             "other",
         ]
 
