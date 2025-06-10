@@ -84,6 +84,9 @@ class Database:
 
     async def initialize(self) -> None:
         """Initialize the database connection and create tables if needed."""
+        # Ensure parent directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
         self._conn = await aiosqlite.connect(self.db_path)
         await self._conn.execute(SQL_CREATE_EVENTS_TABLE)
         await self._conn.commit()
