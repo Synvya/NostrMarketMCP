@@ -63,6 +63,29 @@ SELECT content FROM events
 WHERE kind = 30018 AND pubkey = ? AND d_tag = ?
 """
 
+SQL_GET_STALLS = """
+SELECT id, content, d_tag, created_at FROM events
+WHERE kind = 30017 AND pubkey = ?
+ORDER BY created_at DESC
+"""
+
+SQL_GET_STALL = """
+SELECT content FROM events
+WHERE kind = 30017 AND pubkey = ? AND d_tag = ?
+"""
+
+SQL_GET_ALL_STALLS = """
+SELECT pubkey, content, d_tag, created_at, tags FROM events
+WHERE kind = 30017
+ORDER BY created_at DESC
+"""
+
+SQL_GET_ALL_PRODUCTS = """
+SELECT pubkey, content, d_tag, created_at, tags FROM events
+WHERE kind = 30018
+ORDER BY created_at DESC
+"""
+
 
 class DatabaseError(Exception):
     """Exception raised for database errors."""
@@ -259,6 +282,26 @@ class Database:
                     if not row:
                         return None
                     return json.loads(row[0])
+
+            elif resource_type == "stalls":
+                # Get stall catalog for a merchant
+                stalls = []
+                async with self._conn.execute(SQL_GET_STALLS, (pubkey,)) as cursor:
+                    async for row in cursor:
+                        stall_data = json.loads(row[1])
+                        stall_data["d_tag"] = row[2]
+                        stall_data["created_at"] = row[3]
+                        stalls.append(stall_data)
+                return {"stalls": stalls}
+
+            elif resource_type == "stall" and len(parts) >= 3:
+                # Get specific stall
+                d_tag = parts[2]
+                async with self._conn.execute(SQL_GET_STALL, (pubkey, d_tag)) as cursor:
+                    row = await cursor.fetchone()
+                    if not row:
+                        return None
+                    return json.loads(row[0])
             else:
                 logger.error(f"Unknown resource type: {resource_type}")
                 return None
@@ -336,28 +379,34 @@ class Database:
             # Build the SQL query based on whether a pubkey is provided
             if pubkey:
                 sql = """
-                SELECT content FROM events
+                SELECT pubkey, content, d_tag, created_at, tags FROM events
                 WHERE kind = 30018 AND pubkey = ?
+                ORDER BY created_at DESC
                 """
                 params = (pubkey,)
             else:
-                sql = """
-                SELECT content FROM events
-                WHERE kind = 30018
-                """
+                sql = SQL_GET_ALL_PRODUCTS
                 params = ()
 
             results = []
             async with self._conn.execute(sql, params) as cursor:
                 async for row in cursor:
                     try:
-                        product_data = json.loads(row[0])
+                        product_pubkey = row[0]
+                        product_data = json.loads(row[1])
+                        d_tag = row[2]
+                        created_at = row[3]
+                        tags = json.loads(row[4])
 
                         # Check if product matches search query
                         product_name = str(product_data.get("name", "")).lower()
                         product_desc = str(product_data.get("description", "")).lower()
 
                         if query in product_name or query in product_desc:
+                            product_data["pubkey"] = product_pubkey
+                            product_data["d_tag"] = d_tag
+                            product_data["created_at"] = created_at
+                            product_data["tags"] = tags
                             results.append(product_data)
                     except json.JSONDecodeError:
                         pass  # Skip invalid JSON
@@ -366,6 +415,142 @@ class Database:
         except sqlite3.Error as e:
             logger.error(f"Database error when searching products: {e}")
             return []
+
+    async def list_products(
+        self, limit: int = 10, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """List all products with pagination.
+
+        Args:
+            limit: Maximum number of products to return
+            offset: Number of products to skip
+
+        Returns:
+            List[Dict[str, Any]]: List of product data with pubkey and metadata included
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            sql = """
+            SELECT pubkey, content, d_tag, created_at, tags FROM events
+            WHERE kind = 30018
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """
+
+            results = []
+            async with self._conn.execute(sql, (limit, offset)) as cursor:
+                async for row in cursor:
+                    try:
+                        product_pubkey = row[0]
+                        product_data = json.loads(row[1])
+                        d_tag = row[2]
+                        created_at = row[3]
+                        tags = json.loads(row[4])
+
+                        product_data["pubkey"] = product_pubkey
+                        product_data["d_tag"] = d_tag
+                        product_data["created_at"] = created_at
+                        product_data["tags"] = tags
+                        results.append(product_data)
+                    except json.JSONDecodeError:
+                        pass  # Skip invalid JSON
+
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"Database error when listing products: {e}")
+            return []
+
+    async def get_product_by_pubkey_and_dtag(
+        self, pubkey: str, d_tag: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get a specific product by pubkey and d-tag.
+
+        Args:
+            pubkey: Product owner's pubkey
+            d_tag: Product identifier (d-tag)
+
+        Returns:
+            Optional[Dict[str, Any]]: Product data or None if not found
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT content, created_at, tags FROM events
+                WHERE kind = 30018 AND pubkey = ? AND d_tag = ?
+                """,
+                (pubkey, d_tag),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return None
+
+                product_data = json.loads(row[0])
+                product_data["pubkey"] = pubkey
+                product_data["d_tag"] = d_tag
+                product_data["created_at"] = row[1]
+                product_data["tags"] = json.loads(row[2])
+                return product_data
+
+        except (sqlite3.Error, json.JSONDecodeError) as e:
+            logger.error(f"Database error when getting product: {e}")
+            return None
+
+    async def get_product_stats(self) -> Dict[str, Any]:
+        """Get statistics about products in the database.
+
+        Returns:
+            Dict[str, Any]: Dictionary containing product statistics
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            stats = {}
+
+            # Total products
+            async with self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE kind = 30018"
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["total_products"] = result[0] if result else 0
+
+            # Products by merchant
+            async with self._conn.execute(
+                """
+                SELECT COUNT(DISTINCT pubkey) FROM events WHERE kind = 30018
+                """
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["unique_merchants"] = result[0] if result else 0
+
+            # Most recent product
+            async with self._conn.execute(
+                """
+                SELECT created_at FROM events WHERE kind = 30018
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["latest_product_timestamp"] = result[0] if result else None
+
+            return stats
+        except sqlite3.Error as e:
+            logger.error(f"Database error when getting product stats: {e}")
+            return {}
 
     async def search_profiles(self, query: str) -> List[Dict[str, Any]]:
         """Search for profiles matching the query.
@@ -770,6 +955,204 @@ class Database:
             "gamer_dadjoke",
             "other",
         ]
+
+    async def search_stalls(
+        self, query: str, pubkey: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Search for stalls matching the query.
+
+        Args:
+            query: Search query string
+            pubkey: Optional pubkey to restrict search to a specific merchant
+
+        Returns:
+            List[Dict[str, Any]]: List of matching stall data
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            # Convert query to lowercase for case-insensitive search
+            query = query.lower()
+
+            # Build the SQL query based on whether a pubkey is provided
+            if pubkey:
+                sql = """
+                SELECT pubkey, content, d_tag, created_at, tags FROM events
+                WHERE kind = 30017 AND pubkey = ?
+                ORDER BY created_at DESC
+                """
+                params = (pubkey,)
+            else:
+                sql = SQL_GET_ALL_STALLS
+                params = ()
+
+            results = []
+            async with self._conn.execute(sql, params) as cursor:
+                async for row in cursor:
+                    try:
+                        stall_pubkey = row[0]
+                        stall_data = json.loads(row[1])
+                        d_tag = row[2]
+                        created_at = row[3]
+                        tags = json.loads(row[4])
+
+                        # Check if stall matches search query
+                        stall_name = str(stall_data.get("name", "")).lower()
+                        stall_desc = str(stall_data.get("description", "")).lower()
+
+                        if query in stall_name or query in stall_desc:
+                            stall_data["pubkey"] = stall_pubkey
+                            stall_data["d_tag"] = d_tag
+                            stall_data["created_at"] = created_at
+                            stall_data["tags"] = tags
+                            results.append(stall_data)
+                    except json.JSONDecodeError:
+                        pass  # Skip invalid JSON
+
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"Database error when searching stalls: {e}")
+            return []
+
+    async def list_stalls(
+        self, limit: int = 10, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """List all stalls with pagination.
+
+        Args:
+            limit: Maximum number of stalls to return
+            offset: Number of stalls to skip
+
+        Returns:
+            List[Dict[str, Any]]: List of stall data with pubkey and metadata included
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            sql = """
+            SELECT pubkey, content, d_tag, created_at, tags FROM events
+            WHERE kind = 30017
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+            """
+
+            results = []
+            async with self._conn.execute(sql, (limit, offset)) as cursor:
+                async for row in cursor:
+                    try:
+                        stall_pubkey = row[0]
+                        stall_data = json.loads(row[1])
+                        d_tag = row[2]
+                        created_at = row[3]
+                        tags = json.loads(row[4])
+
+                        stall_data["pubkey"] = stall_pubkey
+                        stall_data["d_tag"] = d_tag
+                        stall_data["created_at"] = created_at
+                        stall_data["tags"] = tags
+                        results.append(stall_data)
+                    except json.JSONDecodeError:
+                        pass  # Skip invalid JSON
+
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"Database error when listing stalls: {e}")
+            return []
+
+    async def get_stall_by_pubkey_and_dtag(
+        self, pubkey: str, d_tag: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get a specific stall by pubkey and d-tag.
+
+        Args:
+            pubkey: Stall owner's pubkey
+            d_tag: Stall identifier (d-tag)
+
+        Returns:
+            Optional[Dict[str, Any]]: Stall data or None if not found
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT content, created_at, tags FROM events
+                WHERE kind = 30017 AND pubkey = ? AND d_tag = ?
+                """,
+                (pubkey, d_tag),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return None
+
+                stall_data = json.loads(row[0])
+                stall_data["pubkey"] = pubkey
+                stall_data["d_tag"] = d_tag
+                stall_data["created_at"] = row[1]
+                stall_data["tags"] = json.loads(row[2])
+                return stall_data
+
+        except (sqlite3.Error, json.JSONDecodeError) as e:
+            logger.error(f"Database error when getting stall: {e}")
+            return None
+
+    async def get_stall_stats(self) -> Dict[str, Any]:
+        """Get statistics about stalls in the database.
+
+        Returns:
+            Dict[str, Any]: Dictionary containing stall statistics
+
+        Raises:
+            DatabaseError: If the database connection is not initialized
+        """
+        if not self._conn:
+            raise DatabaseError("Database not initialized")
+
+        try:
+            stats = {}
+
+            # Total stalls
+            async with self._conn.execute(
+                "SELECT COUNT(*) FROM events WHERE kind = 30017"
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["total_stalls"] = result[0] if result else 0
+
+            # Stalls by merchant
+            async with self._conn.execute(
+                """
+                SELECT COUNT(DISTINCT pubkey) FROM events WHERE kind = 30017
+                """
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["unique_merchants"] = result[0] if result else 0
+
+            # Most recent stall
+            async with self._conn.execute(
+                """
+                SELECT created_at FROM events WHERE kind = 30017
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ) as cursor:
+                result = await cursor.fetchone()
+                stats["latest_stall_timestamp"] = result[0] if result else None
+
+            return stats
+        except sqlite3.Error as e:
+            logger.error(f"Database error when getting stall stats: {e}")
+            return {}
 
     async def clear_all_data(self) -> bool:
         """Clear all data from the database.

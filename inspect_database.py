@@ -43,8 +43,20 @@ async def inspect_database():
         ) as cursor:
             profile_events = (await cursor.fetchone())[0]
 
+        async with db._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE kind = 30017"
+        ) as cursor:
+            stall_events = (await cursor.fetchone())[0]
+
+        async with db._conn.execute(
+            "SELECT COUNT(*) FROM events WHERE kind = 30018"
+        ) as cursor:
+            product_events = (await cursor.fetchone())[0]
+
         print(f"Total events: {total_events}")
         print(f"Profile events (kind=0): {profile_events}")
+        print(f"Stall events (kind=30017): {stall_events}")
+        print(f"Product events (kind=30018): {product_events}")
 
         # Show event kinds
         print("\n📋 EVENT KINDS")
@@ -54,7 +66,7 @@ async def inspect_database():
         ) as cursor:
             async for row in cursor:
                 kind, count = row
-                kind_name = {0: "Profile", 30018: "Product"}.get(
+                kind_name = {0: "Profile", 30017: "Stall", 30018: "Product"}.get(
                     kind, f"Unknown({kind})"
                 )
                 print(f"Kind {kind} ({kind_name}): {count} events")
@@ -116,6 +128,75 @@ async def inspect_database():
                     print(f"   Business: {'Yes' if is_business else 'No'}")
                     if business_type:
                         print(f"   Business Type: {business_type}")
+
+                except json.JSONDecodeError:
+                    print(f"   ❌ Invalid JSON data")
+
+        # Show sample stalls
+        print("\n🏪 SAMPLE STALLS")
+        print("-" * 22)
+        async with db._conn.execute(
+            """
+            SELECT pubkey, content, tags, d_tag, created_at
+            FROM events 
+            WHERE kind = 30017 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        """
+        ) as cursor:
+            i = 0
+            async for row in cursor:
+                i += 1
+                pubkey, content, tags, d_tag, created_at = row
+                try:
+                    stall_data = json.loads(content)
+                    tags_data = json.loads(tags)
+
+                    print(f"\n{i}. Stall:")
+                    print(f"   Pubkey: {pubkey}")
+                    print(f"   D-tag: {d_tag}")
+                    print(f"   Name: {stall_data.get('name', 'N/A')}")
+                    print(
+                        f"   Description: {stall_data.get('description', 'N/A')[:50]}..."
+                    )
+                    print(f"   Currency: {stall_data.get('currency', 'N/A')}")
+                    print(f"   Created: {created_at}")
+                    print(f"   Tags: {len(tags_data)} tags")
+
+                except json.JSONDecodeError:
+                    print(f"   ❌ Invalid JSON data")
+
+        # Show sample products
+        print("\n📦 SAMPLE PRODUCTS")
+        print("-" * 24)
+        async with db._conn.execute(
+            """
+            SELECT pubkey, content, tags, d_tag, created_at
+            FROM events 
+            WHERE kind = 30018 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        """
+        ) as cursor:
+            i = 0
+            async for row in cursor:
+                i += 1
+                pubkey, content, tags, d_tag, created_at = row
+                try:
+                    product_data = json.loads(content)
+                    tags_data = json.loads(tags)
+
+                    print(f"\n{i}. Product:")
+                    print(f"   Pubkey: {pubkey}")
+                    print(f"   D-tag: {d_tag}")
+                    print(f"   Name: {product_data.get('name', 'N/A')}")
+                    print(
+                        f"   Description: {product_data.get('description', 'N/A')[:50]}..."
+                    )
+                    print(f"   Price: {product_data.get('price', 'N/A')}")
+                    print(f"   Currency: {product_data.get('currency', 'N/A')}")
+                    print(f"   Created: {created_at}")
+                    print(f"   Tags: {len(tags_data)} tags")
 
                 except json.JSONDecodeError:
                     print(f"   ❌ Invalid JSON data")

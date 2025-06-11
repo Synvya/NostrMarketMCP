@@ -422,6 +422,390 @@ async def explain_profile_tags(tags_json: str) -> str:
 
 
 @app.tool()
+async def search_stalls(query: str = "", pubkey: str = "", limit: int = 10) -> str:
+    """
+    Search for Nostr marketplace stalls (kind 30017 events).
+
+    Args:
+        query: The search term to look for in stall content (name, description)
+        pubkey: Optional pubkey to limit search to a specific merchant's stalls
+        limit: Maximum number of results to return (default: 10)
+
+    Returns:
+        JSON string containing matching stalls
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        # Convert empty string to None for database method
+        pubkey_param = pubkey if pubkey else None
+
+        # Get stalls matching criteria
+        stalls = await db.search_stalls(query, pubkey_param)
+        limited_stalls = stalls[:limit]
+
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(limited_stalls),
+                "query": query,
+                "pubkey_filter": pubkey or "all",
+                "stalls": limited_stalls,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        logger.error(f"Error searching stalls: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def list_all_stalls(offset: int = 0, limit: int = 20) -> str:
+    """
+    List all marketplace stalls in the database with pagination.
+
+    Args:
+        offset: Number of stalls to skip (for pagination)
+        limit: Maximum number of stalls to return (default: 20, max: 50)
+
+    Returns:
+        JSON string containing the list of stalls
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        # Clamp limit to reasonable bounds
+        limit = max(1, min(limit, 50))
+        offset = max(0, offset)
+
+        stalls = await db.list_stalls(limit, offset)
+
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(stalls),
+                "offset": offset,
+                "limit": limit,
+                "stalls": stalls,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        logger.error(f"Error listing stalls: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def get_stall_by_pubkey_and_dtag(pubkey: str, d_tag: str) -> str:
+    """
+    Get a specific marketplace stall by its pubkey and d-tag identifier.
+
+    Args:
+        pubkey: The merchant's public key
+        d_tag: The stall's unique identifier (d-tag)
+
+    Returns:
+        JSON string containing the stall data
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        stall = await db.get_stall_by_pubkey_and_dtag(pubkey, d_tag)
+
+        if stall:
+            return json.dumps(
+                {
+                    "success": True,
+                    "stall": stall,
+                },
+                indent=2,
+            )
+        else:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"Stall not found for pubkey: {pubkey}, d_tag: {d_tag}",
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error getting stall: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def get_stall_stats() -> str:
+    """
+    Get statistics about marketplace stalls in the database.
+
+    Returns:
+        JSON string containing stall statistics
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        stats = await db.get_stall_stats()
+        return json.dumps({"success": True, "stats": stats}, indent=2)
+    except Exception as e:
+        logger.error(f"Error getting stall stats: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.resource("nostr://stalls/{pubkey}")
+async def get_stalls_resource(pubkey: str) -> str:
+    """
+    Get all stalls for a merchant as a resource.
+
+    Args:
+        pubkey: The merchant's public key
+
+    Returns:
+        The stalls data as a formatted string
+    """
+    if not db:
+        return "Error: Database not initialized"
+
+    try:
+        # Use get_resource_data with stalls URI
+        resource_uri = f"nostr://{pubkey}/stalls"
+        stalls_data = await db.get_resource_data(resource_uri)
+        if stalls_data:
+            return json.dumps(stalls_data, indent=2)
+        else:
+            return json.dumps({"stalls": []}, indent=2)
+    except Exception as e:
+        logger.error(f"Error getting stalls resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.resource("nostr://stall/{pubkey}/{d_tag}")
+async def get_stall_resource(pubkey: str, d_tag: str) -> str:
+    """
+    Get a specific stall as a resource.
+
+    Args:
+        pubkey: The merchant's public key
+        d_tag: The stall's unique identifier
+
+    Returns:
+        The stall data as a formatted string
+    """
+    if not db:
+        return "Error: Database not initialized"
+
+    try:
+        # Use get_resource_data with stall URI
+        resource_uri = f"nostr://{pubkey}/stall/{d_tag}"
+        stall_data = await db.get_resource_data(resource_uri)
+        if stall_data:
+            return json.dumps(stall_data, indent=2)
+        else:
+            return "Stall not found"
+    except Exception as e:
+        logger.error(f"Error getting stall resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.tool()
+async def search_products(query: str = "", pubkey: str = "", limit: int = 10) -> str:
+    """
+    Search for Nostr marketplace products (kind 30018 events).
+
+    Args:
+        query: The search term to look for in product content (name, description)
+        pubkey: Optional pubkey to limit search to a specific merchant's products
+        limit: Maximum number of results to return (default: 10)
+
+    Returns:
+        JSON string containing matching products
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        # Convert empty string to None for database method
+        pubkey_param = pubkey if pubkey else None
+
+        # Get products matching criteria
+        products = await db.search_products(query, pubkey_param)
+        limited_products = products[:limit]
+
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(limited_products),
+                "query": query,
+                "pubkey_filter": pubkey or "all",
+                "products": limited_products,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        logger.error(f"Error searching products: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def list_all_products(offset: int = 0, limit: int = 20) -> str:
+    """
+    List all marketplace products in the database with pagination.
+
+    Args:
+        offset: Number of products to skip (for pagination)
+        limit: Maximum number of products to return (default: 20, max: 50)
+
+    Returns:
+        JSON string containing the list of products
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        # Clamp limit to reasonable bounds
+        limit = max(1, min(limit, 50))
+        offset = max(0, offset)
+
+        products = await db.list_products(limit, offset)
+
+        return json.dumps(
+            {
+                "success": True,
+                "count": len(products),
+                "offset": offset,
+                "limit": limit,
+                "products": products,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        logger.error(f"Error listing products: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def get_product_by_pubkey_and_dtag(pubkey: str, d_tag: str) -> str:
+    """
+    Get a specific marketplace product by its pubkey and d-tag identifier.
+
+    Args:
+        pubkey: The merchant's public key
+        d_tag: The product's unique identifier (d-tag)
+
+    Returns:
+        JSON string containing the product data
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        product = await db.get_product_by_pubkey_and_dtag(pubkey, d_tag)
+
+        if product:
+            return json.dumps(
+                {
+                    "success": True,
+                    "product": product,
+                },
+                indent=2,
+            )
+        else:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"Product not found for pubkey: {pubkey}, d_tag: {d_tag}",
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error getting product: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.tool()
+async def get_product_stats() -> str:
+    """
+    Get statistics about marketplace products in the database.
+
+    Returns:
+        JSON string containing product statistics
+    """
+    await ensure_db_initialized()
+    if not db:
+        return json.dumps({"error": "Database not initialized"})
+
+    try:
+        stats = await db.get_product_stats()
+        return json.dumps({"success": True, "stats": stats}, indent=2)
+    except Exception as e:
+        logger.error(f"Error getting product stats: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@app.resource("nostr://products/{pubkey}")
+async def get_products_resource(pubkey: str) -> str:
+    """
+    Get all products for a merchant as a resource (same as catalog).
+
+    Args:
+        pubkey: The merchant's public key
+
+    Returns:
+        The products data as a formatted string
+    """
+    if not db:
+        return "Error: Database not initialized"
+
+    try:
+        # Use get_resource_data with catalog URI
+        resource_uri = f"nostr://{pubkey}/catalog"
+        products_data = await db.get_resource_data(resource_uri)
+        if products_data:
+            return json.dumps(products_data, indent=2)
+        else:
+            return json.dumps({"products": []}, indent=2)
+    except Exception as e:
+        logger.error(f"Error getting products resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.resource("nostr://product/{pubkey}/{d_tag}")
+async def get_product_resource(pubkey: str, d_tag: str) -> str:
+    """
+    Get a specific product as a resource.
+
+    Args:
+        pubkey: The merchant's public key
+        d_tag: The product's unique identifier
+
+    Returns:
+        The product data as a formatted string
+    """
+    if not db:
+        return "Error: Database not initialized"
+
+    try:
+        # Use get_resource_data with product URI
+        resource_uri = f"nostr://{pubkey}/product/{d_tag}"
+        product_data = await db.get_resource_data(resource_uri)
+        if product_data:
+            return json.dumps(product_data, indent=2)
+        else:
+            return "Product not found"
+    except Exception as e:
+        logger.error(f"Error getting product resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@app.tool()
 async def refresh_profiles_from_nostr() -> str:
     """
     Manually trigger a refresh of the database by searching for new business profiles from Nostr relays.

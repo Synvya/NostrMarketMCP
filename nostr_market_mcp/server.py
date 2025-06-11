@@ -75,6 +75,52 @@ class ProfileListParams(BaseModel):
     offset: Optional[int] = Field(0, description="Offset for pagination")
 
 
+class StallSearchParams(BaseModel):
+    """Parameters for stall search tool."""
+
+    query: str = Field(..., description="Search query for finding stalls")
+    pubkey: Optional[str] = Field(
+        None, description="Optional pubkey to limit search to specific merchant"
+    )
+
+
+class StallListParams(BaseModel):
+    """Parameters for listing stalls."""
+
+    limit: Optional[int] = Field(10, description="Maximum number of stalls to return")
+    offset: Optional[int] = Field(0, description="Offset for pagination")
+
+
+class StallByIdParams(BaseModel):
+    """Parameters for getting a stall by pubkey and d-tag."""
+
+    pubkey: str = Field(..., description="Merchant's public key")
+    d_tag: str = Field(..., description="Stall identifier (d-tag)")
+
+
+class ProductSearchParams(BaseModel):
+    """Parameters for product search tool."""
+
+    query: str = Field(..., description="Search query for finding products")
+    pubkey: Optional[str] = Field(
+        None, description="Optional pubkey to limit search to specific merchant"
+    )
+
+
+class ProductListParams(BaseModel):
+    """Parameters for listing products."""
+
+    limit: Optional[int] = Field(10, description="Maximum number of products to return")
+    offset: Optional[int] = Field(0, description="Offset for pagination")
+
+
+class ProductByIdParams(BaseModel):
+    """Parameters for getting a product by pubkey and d-tag."""
+
+    pubkey: str = Field(..., description="Merchant's public key")
+    d_tag: str = Field(..., description="Product identifier (d-tag)")
+
+
 # Simple MCP-like interface for profiles
 class ProfileMCPServer:
     """Profile MCP server that provides resources and tools for Nostr profiles."""
@@ -197,20 +243,240 @@ class ProfileMCPServer:
                 logger.error(f"Error getting profile stats: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.get("/mcp/stalls/{pubkey}")
+        async def get_stalls(pubkey: str):
+            """Get all stalls for a specific merchant by pubkey."""
+            try:
+                stalls_data = await self.db.get_resource_data(
+                    f"nostr://{pubkey}/stalls"
+                )
+                if not stalls_data:
+                    return {
+                        "stalls": [],
+                        "message": f"No stalls found for pubkey: {pubkey}",
+                        "pubkey": pubkey,
+                    }
+
+                # Add metadata
+                stalls_data["pubkey"] = pubkey
+                stalls_data["resource_type"] = "stalls"
+                return stalls_data
+            except Exception as e:
+                logger.error(f"Error retrieving stalls for {pubkey}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/mcp/stall/{pubkey}/{d_tag}")
+        async def get_stall(pubkey: str, d_tag: str):
+            """Get a specific stall by pubkey and d-tag."""
+            try:
+                stall_data = await self.db.get_resource_data(
+                    f"nostr://{pubkey}/stall/{d_tag}"
+                )
+                if not stall_data:
+                    return {
+                        "error": f"Stall not found for pubkey: {pubkey}, d_tag: {d_tag}",
+                        "pubkey": pubkey,
+                        "d_tag": d_tag,
+                    }
+
+                # Add metadata
+                stall_data["pubkey"] = pubkey
+                stall_data["d_tag"] = d_tag
+                stall_data["resource_type"] = "stall"
+                return stall_data
+            except Exception as e:
+                logger.error(f"Error retrieving stall for {pubkey}/{d_tag}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/search_stalls")
+        async def search_stalls(params: StallSearchParams):
+            """Search for marketplace stalls by content."""
+            try:
+                results = await self.db.search_stalls(params.query, params.pubkey)
+                return {
+                    "stalls": results,
+                    "query": params.query,
+                    "pubkey_filter": params.pubkey,
+                    "count": len(results),
+                }
+            except Exception as e:
+                logger.error(f"Error searching stalls: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/list_all_stalls")
+        async def list_all_stalls(params: StallListParams):
+            """List all available stalls in the database."""
+            try:
+                # Clamp limit to reasonable bounds
+                limit = max(1, min(params.limit or 10, 100))
+                offset = max(0, params.offset or 0)
+
+                stalls = await self.db.list_stalls(limit, offset)
+                return {
+                    "stalls": stalls,
+                    "limit": limit,
+                    "offset": offset,
+                    "count": len(stalls),
+                }
+            except Exception as e:
+                logger.error(f"Error listing stalls: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/get_stall_by_pubkey_and_dtag")
+        async def get_stall_by_pubkey_and_dtag(params: StallByIdParams):
+            """Get a specific stall by its pubkey and d-tag."""
+            try:
+                stall_data = await self.db.get_stall_by_pubkey_and_dtag(
+                    params.pubkey, params.d_tag
+                )
+                if not stall_data:
+                    return {
+                        "error": f"Stall not found for pubkey: {params.pubkey}, d_tag: {params.d_tag}"
+                    }
+
+                return stall_data
+            except Exception as e:
+                logger.error(f"Error retrieving stall: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/mcp/tools/get_stall_stats")
+        async def get_stall_stats():
+            """Get statistics about the stalls in the database."""
+            try:
+                stats = await self.db.get_stall_stats()
+                return stats
+            except Exception as e:
+                logger.error(f"Error getting stall stats: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/mcp/products/{pubkey}")
+        async def get_products(pubkey: str):
+            """Get all products for a specific merchant by pubkey."""
+            try:
+                products_data = await self.db.get_resource_data(
+                    f"nostr://{pubkey}/catalog"
+                )
+                if not products_data:
+                    return {
+                        "products": [],
+                        "message": f"No products found for pubkey: {pubkey}",
+                        "pubkey": pubkey,
+                    }
+
+                # Add metadata
+                products_data["pubkey"] = pubkey
+                products_data["resource_type"] = "products"
+                return products_data
+            except Exception as e:
+                logger.error(f"Error retrieving products for {pubkey}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/mcp/product/{pubkey}/{d_tag}")
+        async def get_product(pubkey: str, d_tag: str):
+            """Get a specific product by pubkey and d-tag."""
+            try:
+                product_data = await self.db.get_resource_data(
+                    f"nostr://{pubkey}/product/{d_tag}"
+                )
+                if not product_data:
+                    return {
+                        "error": f"Product not found for pubkey: {pubkey}, d_tag: {d_tag}",
+                        "pubkey": pubkey,
+                        "d_tag": d_tag,
+                    }
+
+                # Add metadata
+                product_data["pubkey"] = pubkey
+                product_data["d_tag"] = d_tag
+                product_data["resource_type"] = "product"
+                return product_data
+            except Exception as e:
+                logger.error(f"Error retrieving product for {pubkey}/{d_tag}: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/search_products")
+        async def search_products(params: ProductSearchParams):
+            """Search for marketplace products by content."""
+            try:
+                results = await self.db.search_products(params.query, params.pubkey)
+                return {
+                    "products": results,
+                    "query": params.query,
+                    "pubkey_filter": params.pubkey,
+                    "count": len(results),
+                }
+            except Exception as e:
+                logger.error(f"Error searching products: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/list_all_products")
+        async def list_all_products(params: ProductListParams):
+            """List all available products in the database."""
+            try:
+                # Clamp limit to reasonable bounds
+                limit = max(1, min(params.limit or 10, 100))
+                offset = max(0, params.offset or 0)
+
+                products = await self.db.list_products(limit, offset)
+                return {
+                    "products": products,
+                    "limit": limit,
+                    "offset": offset,
+                    "count": len(products),
+                }
+            except Exception as e:
+                logger.error(f"Error listing products: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/mcp/tools/get_product_by_pubkey_and_dtag")
+        async def get_product_by_pubkey_and_dtag(params: ProductByIdParams):
+            """Get a specific product by its pubkey and d-tag."""
+            try:
+                product_data = await self.db.get_product_by_pubkey_and_dtag(
+                    params.pubkey, params.d_tag
+                )
+                if not product_data:
+                    return {
+                        "error": f"Product not found for pubkey: {params.pubkey}, d_tag: {params.d_tag}"
+                    }
+
+                return product_data
+            except Exception as e:
+                logger.error(f"Error retrieving product: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/mcp/tools/get_product_stats")
+        async def get_product_stats():
+            """Get statistics about the products in the database."""
+            try:
+                stats = await self.db.get_product_stats()
+                return stats
+            except Exception as e:
+                logger.error(f"Error getting product stats: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
         @self.app.get("/mcp/info")
         async def get_server_info():
             """Get information about this MCP server."""
             return {
-                "name": "NostrProfileMCP",
+                "name": "NostrMarketMCP",
                 "version": "0.1.0",
-                "description": "MCP server for Nostr profile data",
+                "description": "MCP server for Nostr profile and marketplace data",
                 "capabilities": {
-                    "resources": ["profiles"],
+                    "resources": ["profiles", "stalls", "products"],
                     "tools": [
                         "search_profiles",
                         "get_profile_by_pubkey",
                         "list_all_profiles",
                         "get_profile_stats",
+                        "search_stalls",
+                        "list_all_stalls",
+                        "get_stall_by_pubkey_and_dtag",
+                        "get_stall_stats",
+                        "search_products",
+                        "list_all_products",
+                        "get_product_by_pubkey_and_dtag",
+                        "get_product_stats",
                     ],
                 },
             }
