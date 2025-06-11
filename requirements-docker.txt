@@ -5,6 +5,12 @@ pydantic
 aiosqlite
 click
 
+# Security: Pin minimum secure versions
+h11>=0.16.0
+jinja2>=3.1.6
+requests>=2.32.4
+setuptools>=78.1.1
+
 # MCP SDK for refresh functionality
 mcp
 
