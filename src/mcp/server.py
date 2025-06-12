@@ -28,11 +28,45 @@ except ImportError:
 
         def __init__(self, title: str = "Nostr Profiles", **kwargs):
             super().__init__(title=title, **kwargs)
+            # Store registered tools/resources for possible introspection
+            self._registered_tools = []
+            self._registered_resources = []
 
         def run(self, host: str = "0.0.0.0", port: int = 8081, reload: bool = False):
             import uvicorn
 
             uvicorn.run("mcp.server:app", host=host, port=port, reload=reload)
+
+        # Decorator stubs
+
+        def tool(self, *dargs, **dkwargs):
+            """Stub for FastMCP @tool decorator."""
+
+            # Used without parentheses -> @app.tool
+            if dargs and callable(dargs[0]) and not dkwargs:
+                func = dargs[0]
+                self._registered_tools.append(func)
+                return func
+
+            def decorator(func):
+                self._registered_tools.append(func)
+                return func
+
+            return decorator
+
+        def resource(self, *dargs, **dkwargs):
+            """Stub for FastMCP @resource decorator."""
+
+            if dargs and callable(dargs[0]) and not dkwargs:
+                func = dargs[0]
+                self._registered_resources.append(func)
+                return func
+
+            def decorator(func):
+                self._registered_resources.append(func)
+                return func
+
+            return decorator
 
 
 # --------------------------------------------------------------------------
