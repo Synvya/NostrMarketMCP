@@ -18,17 +18,10 @@ mcp
 synvya-sdk
 
 # Security and rate limiting
-slowapi
 python-multipart
 
 # Environment and configuration management
 python-dotenv
-
-# Monitoring and logging
-structlog
-
-# Input validation and sanitization
-bleach
 
 # HTTP client for health checks
 httpx

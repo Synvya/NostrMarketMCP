@@ -1,17 +1,21 @@
 openapi: 3.1.0
 info:
-  title: Nostr Profiles API
-  description: API for searching and managing Nostr profile data, specifically business profiles with L/business.type tags
+  title: Secure Nostr Profiles API
+  description: Production-ready API for searching Nostr profile data with authentication
   version: 1.0.0
 servers:
   - url: https://yourdomain.com
     description: Production server (update with your actual domain)
+  - url: http://localhost:8080
+    description: Local development server
 paths:
   /api/search_profiles:
     post:
       operationId: searchProfiles
       summary: Search Nostr profiles by content
       description: Search for Nostr profiles by content including name, about, nip05, and other metadata fields
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -50,6 +54,8 @@ paths:
       operationId: searchBusinessProfiles
       summary: Search business Nostr profiles
       description: Search for business Nostr profiles with specific business type tags (L/business.type)
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -92,6 +98,8 @@ paths:
       operationId: getProfile
       summary: Get profile by public key
       description: Retrieve a specific Nostr profile by its public key
+      security:
+        - ApiKeyAuth: []
       parameters:
         - name: pubkey
           in: path
@@ -131,6 +139,8 @@ paths:
       operationId: getStats
       summary: Get database statistics
       description: Get statistics about the profile database including total counts and metadata
+      security:
+        - ApiKeyAuth: []
       responses:
         '200':
           description: Database statistics
@@ -150,6 +160,8 @@ paths:
       operationId: getBusinessTypes
       summary: Get available business types
       description: Get the list of available business types for filtering business profiles
+      security:
+        - ApiKeyAuth: []
       responses:
         '200':
           description: Available business types
@@ -163,6 +175,8 @@ paths:
       operationId: refreshDatabase
       summary: Refresh database from Nostr relays
       description: Manually trigger a refresh of the database by searching for new business profiles from Nostr relays
+      security:
+        - ApiKeyAuth: []
       responses:
         '200':
           description: Refresh completed
@@ -178,6 +192,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
   schemas:
     Profile:
       type: object
