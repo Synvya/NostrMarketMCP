@@ -165,13 +165,9 @@ ssl/
 certs/
 
 # Internal documentation files (not for public sync)
-SECURITY_INCIDENT_RESPONSE.md
-SECURITY_RESPONSE.md
 SECURITY_IMPLEMENTATION.md
-AWS_DEPLOYMENT.md
-OPENAI_INTEGRATION.md 
-TESTING_GUIDE.md
-LOCAL_DEV_GUIDE.md
+
+
 
 # Local testing
 run_local.py
