@@ -9,7 +9,7 @@ The MCP server provides tools and resources for accessing Nostr profile data thr
 ## Test Files
 
 - **`tests/test_mcp_server.py`** - Comprehensive MCP server tests
-- **`run_mcp_tests.py`** - Test runner for MCP server tests
+- **`tests/run_mcp_tests.py`** - Test runner for MCP server tests
 
 ## MCP Tools Being Tested
 
@@ -61,9 +61,11 @@ pip install -r requirements.txt
 
 ```bash
 # Using the MCP test runner (recommended)
-python run_mcp_tests.py
+cd tests && python run_mcp_tests.py
+```
 
 # Using pytest directly
+```bash
 pytest tests/test_mcp_server.py -v
 ```
 
@@ -168,7 +170,7 @@ class MockDatabase:
 ## Example Test Run
 
 ```bash
-$ python run_mcp_tests.py
+$ cd tests && python run_mcp_tests.py
 
 🚀 Running Nostr Profiles MCP Server Tests
 ==================================================

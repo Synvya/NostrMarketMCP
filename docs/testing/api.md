@@ -9,16 +9,19 @@
 ---
 
 ## 1 · Quick-start (local)
-
-```bash
 # ❶ Create virtual-env & install deps
+```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+```
 
 # ❷ Start the API in dev mode (auto-reload)
-python run_api_server.py   # listens on http://127.0.0.1:8080
+```bash
+cd scripts && python run_api_server.py   # listens on http://127.0.0.1:8080
+```
 
 # ❸ Run the full pytest suite
+```bash
 pytest tests/test_api_endpoints.py -v
 ```
 
@@ -116,8 +119,6 @@ Record `Requests/sec` & latency percentiles in CI to catch regressions.
 docs/
 └── testing/
     ├── api.md          ← you are here ✅
-    ├── mcp.md          ← MCP testing (from old MCP_TESTING_GUIDE.md)
-    └── cheat-sheet.md  ← quick bash helper (from testing.md)
+    ├── mcp.md          ← MCP testing 
+    └── cheat-sheet.md  ← quick bash helper
 ```
-
-*Delete* `docs/API_TESTING_GUIDE.md` & `docs/TESTING_GUIDE.md` once this file is committed. 
