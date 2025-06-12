@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field
 
 # Import our simplified security module and database
 sys.path.insert(0, str(Path(__file__).parent.parent))  # Add src/ to path
-from api.security_simple import (
+from ..core import Database
+from ..core.shared_database import get_shared_database
+from .security_simple import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
     InputValidator,
@@ -32,8 +34,6 @@ from api.security_simple import (
     rate_limiter,
     security_middleware,
 )
-from db.shared_database import get_shared_database
-from mcp.nostr_market_mcp.db import Database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -452,7 +452,7 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
         logger.info("Manual refresh triggered")
 
         # Import refresh functionality
-        from nostr_profiles_mcp_server import refresh_database
+        from ..mcp.main_server import refresh_database
 
         await refresh_database()
 
@@ -518,7 +518,7 @@ async def shutdown_event():
 
     # Stop automatic refresh
     try:
-        from nostr_profiles_mcp_server import cleanup_db
+        from ..mcp.main_server import cleanup_db
 
         await cleanup_db()
         logger.info("Automatic refresh stopped")

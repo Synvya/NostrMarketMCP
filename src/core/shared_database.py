@@ -3,13 +3,12 @@
 Shared database instance for both API and MCP servers.
 Ensures both servers use the exact same database connection.
 """
-
 import logging
 import os
 from pathlib import Path
 from typing import Optional
 
-from nostr_market_mcp.db import Database
+from .database import Database
 
 logger = logging.getLogger(__name__)
 

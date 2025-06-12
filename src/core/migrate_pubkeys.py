@@ -10,9 +10,8 @@ import logging
 import os
 from pathlib import Path
 
-from synvya_sdk import NostrKeys
-
-from nostr_market_mcp.db import Database
+from ..mcp.main_server import refresh_database, set_shared_database
+from .database import Database
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,8 +99,7 @@ async def clear_and_refresh():
         if success:
             logger.info("Database cleared successfully")
 
-            # Import and run refresh
-            from nostr_profiles_mcp_server import refresh_database, set_shared_database
+            # Run refresh
 
             set_shared_database(db)
 

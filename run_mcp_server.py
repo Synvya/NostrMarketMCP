@@ -10,8 +10,10 @@ from pathlib import Path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
-# Import and run the MCP server main function
-from mcp.main_server import main
-
+# Run the MCP server directly
 if __name__ == "__main__":
-    main()
+    import subprocess
+
+    # Run the main server file directly
+    server_path = Path(__file__).parent / "src" / "mcp" / "main_server.py"
+    subprocess.run([sys.executable, str(server_path)])

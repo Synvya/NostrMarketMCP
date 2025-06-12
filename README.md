@@ -41,7 +41,7 @@ pip install .
 src/
 ├── api/           # HTTP API server for web/OpenAI integration
 ├── mcp/           # MCP server for Claude/MCP clients  
-└── db/            # Database utilities
+└── core/            # Database and shared components
 tests/             # All tests and test runners
 ```
 

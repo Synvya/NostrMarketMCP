@@ -17,7 +17,7 @@ except ImportError:
     else:
         raise
 
-from nostr_market_mcp.db import Database
+from ..core import Database
 
 logger = logging.getLogger(__name__)
 

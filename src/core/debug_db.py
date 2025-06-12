@@ -4,7 +4,7 @@
 import asyncio
 from pathlib import Path
 
-from nostr_market_mcp.db import Database
+from .database import Database
 
 
 async def main():

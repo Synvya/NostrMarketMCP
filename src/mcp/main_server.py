@@ -36,9 +36,8 @@ except ImportError:
     else:
         raise
 
-from nostr_market_mcp.db import Database
-
-from ..db.shared_database import get_shared_database
+from ..core import Database
+from ..core.shared_database import get_shared_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
