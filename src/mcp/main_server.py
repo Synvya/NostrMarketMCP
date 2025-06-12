@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
+
 from mcp.server.fastmcp import FastMCP
 
 # Try to import from the real SDK, fall back to mocks for testing
@@ -36,7 +37,8 @@ except ImportError:
         raise
 
 from nostr_market_mcp.db import Database
-from shared_database import get_shared_database
+
+from ..db.shared_database import get_shared_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

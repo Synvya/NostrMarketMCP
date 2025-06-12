@@ -21,9 +21,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 # Import our simplified security module and database
-sys.path.insert(0, str(Path(__file__).parent))
-from nostr_market_mcp.db import Database
-from security_simple import (
+sys.path.insert(0, str(Path(__file__).parent.parent))  # Add src/ to path
+from api.security_simple import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
     InputValidator,
@@ -33,7 +32,8 @@ from security_simple import (
     rate_limiter,
     security_middleware,
 )
-from shared_database import get_shared_database
+from db.shared_database import get_shared_database
+from mcp.nostr_market_mcp.db import Database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -126,7 +126,7 @@ async def get_authenticated_user(
 ):
     """Verify authentication credentials."""
     # Get fresh config to check what's actually configured
-    from security_simple import get_security_config
+    from .security_simple import get_security_config
 
     current_config = get_security_config()
 
@@ -180,7 +180,7 @@ async def get_database() -> Database:
 # Dynamic dependency helper
 def get_auth_dependencies():
     """Get authentication dependencies based on current config."""
-    from security_simple import get_security_config
+    from .security_simple import get_security_config
 
     current_config = get_security_config()
     if current_config["API_KEY"] or current_config["BEARER_TOKEN"]:
@@ -502,7 +502,7 @@ async def startup_event():
 
     # Start automatic refresh every hour
     try:
-        from nostr_profiles_mcp_server import initialize_db
+        from ..mcp.main_server import initialize_db
 
         await initialize_db()
         logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
