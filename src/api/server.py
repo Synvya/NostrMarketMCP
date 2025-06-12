@@ -22,8 +22,9 @@ from pydantic import BaseModel, Field
 
 # Import our simplified security module and database
 sys.path.insert(0, str(Path(__file__).parent.parent))  # Add src/ to path
-from ..core import Database
-from ..core.shared_database import get_shared_database
+from core import Database
+from core.shared_database import get_shared_database
+
 from .security import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
@@ -452,7 +453,7 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
         logger.info("Manual refresh triggered")
 
         # Import refresh functionality
-        from ..mcp.server import refresh_database
+        from mcp.server import refresh_database
 
         await refresh_database()
 
@@ -502,7 +503,7 @@ async def startup_event():
 
     # Start automatic refresh every hour
     try:
-        from ..mcp.server import initialize_db
+        from mcp.server import initialize_db
 
         await initialize_db()
         logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
@@ -518,7 +519,7 @@ async def shutdown_event():
 
     # Stop automatic refresh
     try:
-        from ..mcp.server import cleanup_db
+        from mcp.server import cleanup_db
 
         await cleanup_db()
         logger.info("Automatic refresh stopped")

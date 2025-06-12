@@ -10,7 +10,8 @@ import logging
 import os
 from pathlib import Path
 
-from ..mcp.server import refresh_database, set_shared_database
+from mcp.server import refresh_database, set_shared_database
+
 from .database import Database
 
 logging.basicConfig(level=logging.INFO)
