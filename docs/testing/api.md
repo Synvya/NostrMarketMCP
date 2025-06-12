@@ -1,8 +1,6 @@
 # NostrMarketMCP – HTTP API Testing Guide
 
-> One file to rule them all. This replaces the old `API_TESTING_GUIDE.md` **and** `TESTING_GUIDE.md`.
->
-> • **Scope** – tests & manual checks for the FastAPI server in `src/api/simple_secure_server.py`
+> • **Scope** – tests & manual checks for the FastAPI server in `src/api/server.py`
 > • **Audience** – contributors, CI pipelines, power-users
 > • **Security** – placeholders only (`YOUR_API_KEY`, `YOUR_BEARER_TOKEN`)
 
@@ -37,22 +35,35 @@ export HOST=http://127.0.0.1:8080        # or your load-balancer URL
 export API_KEY=YOUR_API_KEY              # set one auth method only
 # export BEARER_TOKEN=YOUR_BEARER_TOKEN
 
-AUTH=${API_KEY:+-H "X-API-Key: $API_KEY"}${BEARER_TOKEN:+-H "Authorization: Bearer $BEARER_TOKEN"}
+AUTH=()
+[[ -n $API_KEY ]] && AUTH=(-H "X-API-Key: $API_KEY")
+# [[ -n $BEARER_TOKEN ]] && AUTH=(-H "Authorization: Bearer $BEARER_TOKEN")
 ```
 
 ```bash
 # Health check
-curl -s $HOST/health $AUTH | jq .
+curl -s $HOST/health | jq .
 
 # Profile search
-curl -s $HOST/api/search_profiles \
-     -H "Content-Type: application/json" $AUTH \
-     -d '{"query":"test"}' | jq .
+curl_args=(
+  -s "$HOST/api/search_profiles"
+  -H "Content-Type: application/json"
+  --data '{"query":"test"}'
+)
+
+[[ -n $API_KEY ]] && curl_args+=(-H "X-API-Key: $API_KEY")
+
+curl "${curl_args[@]}" | jq .
 
 # Stats overview
-curl -s $HOST/api/stats $AUTH | jq .
+curl_args=(
+  -s "$HOST/api/stats"
+  "${AUTH[@]}"
+)
+
+curl "${curl_args[@]}" | jq .
 ```
-Expected: HTTP 200 and JSON keys `status | profiles | stats`.
+Expected: HTTP 200 and JSON keys `success | stats`.
 
 ---
 

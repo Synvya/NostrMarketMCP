@@ -41,6 +41,20 @@ async def get_shared_database(db_path: Optional[Path] = None) -> Database:
     return _shared_db
 
 
+def set_shared_database(database: Database) -> None:
+    """Set the shared database instance.
+
+    This is useful for testing or when you want to use a specific database instance
+    across multiple modules.
+
+    Args:
+        database: The Database instance to use as the shared database
+    """
+    global _shared_db
+    _shared_db = database
+    logger.info("Shared database instance set")
+
+
 async def close_shared_database():
     """Close the shared database connection."""
     global _shared_db

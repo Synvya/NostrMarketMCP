@@ -20,10 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-# Import our simplified security module and database
-sys.path.insert(0, str(Path(__file__).parent.parent))  # Add src/ to path
-from core import Database
-from core.shared_database import get_shared_database
+from src.core import Database
+from src.core.shared_database import get_shared_database
+from src.mcp.server import cleanup_db, initialize_db, refresh_database
 
 from .security import (
     SECURITY_CONFIG,
@@ -452,9 +451,6 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
     try:
         logger.info("Manual refresh triggered")
 
-        # Import refresh functionality
-        from mcp.server import refresh_database
-
         await refresh_database()
 
         stats = await database.get_profile_stats()
@@ -503,7 +499,6 @@ async def startup_event():
 
     # Start automatic refresh every hour
     try:
-        from mcp.server import initialize_db
 
         await initialize_db()
         logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
@@ -519,7 +514,6 @@ async def shutdown_event():
 
     # Stop automatic refresh
     try:
-        from mcp.server import cleanup_db
 
         await cleanup_db()
         logger.info("Automatic refresh stopped")

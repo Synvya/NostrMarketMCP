@@ -3,7 +3,7 @@
 Nostr Profiles MCP Server
 
 A Model Context Protocol server that provides access to Nostr profile data.
-This server exposes tools for searching, retrieving, and analyzing Nostr profiles.
+This server implements MCP over HTTP with JSON-RPC and Server-Sent Events.
 """
 
 import asyncio
@@ -11,65 +11,18 @@ import json
 import logging
 import sys
 import time
+from contextlib import asynccontextmanager
 from os import getenv
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
-# ---------------------- FastMCP import / fallback -------------------------
-try:
-    from fastmcp import FastMCP  # Preferred external package
-except ImportError:
-    from fastapi import FastAPI as _FastAPI
-
-    class FastMCP(_FastAPI):
-        """Lightweight substitute for FastMCP using FastAPI."""
-
-        def __init__(self, title: str = "Nostr Profiles", **kwargs):
-            super().__init__(title=title, **kwargs)
-            # Store registered tools/resources for possible introspection
-            self._registered_tools = []
-            self._registered_resources = []
-
-        def run(self, host: str = "0.0.0.0", port: int = 8081, reload: bool = False):
-            import uvicorn
-
-            uvicorn.run("mcp.server:app", host=host, port=port, reload=reload)
-
-        # Decorator stubs
-
-        def tool(self, *dargs, **dkwargs):
-            """Stub for FastMCP @tool decorator."""
-
-            # Used without parentheses -> @app.tool
-            if dargs and callable(dargs[0]) and not dkwargs:
-                func = dargs[0]
-                self._registered_tools.append(func)
-                return func
-
-            def decorator(func):
-                self._registered_tools.append(func)
-                return func
-
-            return decorator
-
-        def resource(self, *dargs, **dkwargs):
-            """Stub for FastMCP @resource decorator."""
-
-            if dargs and callable(dargs[0]) and not dkwargs:
-                func = dargs[0]
-                self._registered_resources.append(func)
-                return func
-
-            def decorator(func):
-                self._registered_resources.append(func)
-                return func
-
-            return decorator
-
-
-# --------------------------------------------------------------------------
+from src.core import Database
+from src.core.shared_database import close_shared_database, get_shared_database
 
 # Try to import from the real SDK, fall back to mocks for testing
 try:
@@ -87,9 +40,6 @@ except ImportError:
         from tests.mocks.synvya_sdk.nostr import NostrClient
     else:
         raise
-
-from core import Database
-from core.shared_database import get_shared_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -122,11 +72,30 @@ else:
 # Refresh interval in seconds (1 hour)
 REFRESH_INTERVAL = 3600
 
-# Create the MCP server
-app = FastMCP("Nostr Profiles")
 
-# Global database instance
-db: Optional[Database] = None
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI app."""
+    # Startup
+    logger.info("Starting Nostr Profiles MCP Server")
+    await initialize_db()
+    yield
+    # Shutdown
+    logger.info("Shutting down Nostr Profiles MCP Server")
+    await cleanup_db()
+
+
+# Create the FastAPI app for MCP over HTTP
+app = FastAPI(title="Nostr Profiles MCP Server", lifespan=lifespan)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global refresh task
 refresh_task: Optional[asyncio.Task] = None
@@ -134,811 +103,566 @@ refresh_task: Optional[asyncio.Task] = None
 # Global NostrClient for searching
 nostr_client: Optional[NostrClient] = None
 
+# MCP Server capabilities and info
+MCP_SERVER_INFO = {
+    "name": "nostr-profiles-mcp",
+    "version": "1.0.0",
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+        "tools": {"listChanged": False},
+        "resources": {"subscribe": False, "listChanged": False},
+        "logging": {},
+        "prompts": {},
+    },
+}
 
-def set_shared_database(database: Database) -> None:
-    """Set the shared database instance for the MCP server."""
-    global db
-    db = database
-    logger.info("MCP server using shared database instance")
+# Available tools
+AVAILABLE_TOOLS = [
+    {
+        "name": "search_profiles",
+        "description": "Search for Nostr profiles by content",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum results",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_profile_by_pubkey",
+        "description": "Get a specific Nostr profile by public key",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pubkey": {"type": "string", "description": "Public key (hex)"}
+            },
+            "required": ["pubkey"],
+        },
+    },
+    {
+        "name": "search_business_profiles",
+        "description": "Search for business Nostr profiles",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "business_type": {
+                    "type": "string",
+                    "description": "Business type filter",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum results",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_profile_stats",
+        "description": "Get statistics about the profile database",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "refresh_profiles_from_nostr",
+        "description": "Manually refresh the database from Nostr relays",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_all_profiles",
+        "description": "List all profiles in the database",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "default": 100,
+                    "description": "Maximum results",
+                }
+            },
+        },
+    },
+    {
+        "name": "get_business_types",
+        "description": "Get all available business types",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "explain_profile_tags",
+        "description": "Explain Nostr profile tags",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tags_json": {
+                    "type": "string",
+                    "description": "JSON string of tags array",
+                }
+            },
+            "required": ["tags_json"],
+        },
+    },
+    {
+        "name": "get_refresh_status",
+        "description": "Get the status of the database refresh process",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "clear_database",
+        "description": "Clear all profiles from the database",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
+# Available resources
+AVAILABLE_RESOURCES = [
+    {
+        "uri": "nostr://profiles/{pubkey}",
+        "name": "Nostr Profile",
+        "description": "A Nostr profile resource",
+        "mimeType": "application/json",
+    }
+]
 
 
 async def initialize_db():
     """Initialize the shared database connection."""
-    global db
-    if db is None:
-        db = await get_shared_database()
-        logger.info("MCP server using shared database instance")
+    # Get the shared database instance - this will create it if it doesn't exist
+    await get_shared_database()
+    logger.info("MCP server using shared database instance")
 
-        # Only run initial refresh and start periodic task when first creating the database
-        await refresh_database()  # Initial refresh at startup
-        await start_refresh_task()  # Start periodic refresh
+    # Skip network operations in test environment
+    if getenv("ENVIRONMENT") == "test":
+        logger.info("Test environment detected - skipping network operations")
+        return
+
+    # Only run initial refresh and start periodic task when first creating the database
+    await refresh_database()  # Initial refresh at startup
+    await start_refresh_task()  # Start periodic refresh
 
 
 async def cleanup_db():
     """Cleanup database connection."""
-    global db
-
     # Stop refresh task first
     await stop_refresh_task()
-
-    if db:
-        await db.close()
-        logger.info("Database connection closed")
+    # Close the shared database
+    await close_shared_database()
 
 
 async def ensure_db_initialized():
     """Ensure database is initialized before any operation."""
-    global db
-    if db is None:
-        await initialize_db()
+    # Always use the shared database
+    await get_shared_database()
 
 
-@app.tool()
-async def search_profiles(query: str, limit: int = 10) -> str:
-    """
-    Search for Nostr profiles by content.
-
-    Args:
-        query: The search term to look for in profile content
-        limit: Maximum number of results to return (default: 10)
-
-    Returns:
-        JSON string containing matching profiles
-    """
+# MCP Tool implementations
+async def tool_search_profiles(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Search for Nostr profiles by content."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
+
+    query = arguments.get("query", "")
+    limit = arguments.get("limit", 10)
 
     try:
-        # Note: Database.search_profiles doesn't support limit parameter,
-        # so we'll get all results and limit them here
         profiles = await db.search_profiles(query)
         limited_profiles = profiles[:limit]
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(limited_profiles),
-                "profiles": limited_profiles,
-            },
-            indent=2,
-        )
+        return {
+            "success": True,
+            "count": len(limited_profiles),
+            "profiles": limited_profiles,
+        }
     except Exception as e:
         logger.error(f"Error searching profiles: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}
 
 
-@app.tool()
-async def get_profile_by_pubkey(pubkey: str) -> str:
-    """
-    Get a specific Nostr profile by its public key.
-
-    Args:
-        pubkey: The public key (hex string) of the profile to retrieve
-
-    Returns:
-        JSON string containing the profile data
-    """
+async def tool_get_profile_by_pubkey(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get a specific Nostr profile by public key."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
+
+    pubkey = arguments.get("pubkey", "")
 
     try:
-        # Use get_resource_data with profile URI
         resource_uri = f"nostr://{pubkey}/profile"
         profile = await db.get_resource_data(resource_uri)
         if profile:
-            # Add pubkey to the profile data
             profile["pubkey"] = pubkey
-            return json.dumps({"success": True, "profile": profile}, indent=2)
+            return {"success": True, "profile": profile}
         else:
-            return json.dumps({"success": False, "error": "Profile not found"})
+            return {"success": False, "error": "Profile not found"}
     except Exception as e:
         logger.error(f"Error getting profile: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}
 
 
-@app.tool()
-async def list_all_profiles(offset: int = 0, limit: int = 20) -> str:
-    """
-    List all profiles with pagination.
-
-    Args:
-        offset: Number of profiles to skip (default: 0)
-        limit: Maximum number of profiles to return (default: 20)
-
-    Returns:
-        JSON string containing profiles and pagination info
-    """
+async def tool_search_business_profiles(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Search for business Nostr profiles."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
+
+    query = arguments.get("query", "")
+    business_type = arguments.get("business_type", "")
+    limit = arguments.get("limit", 10)
 
     try:
-        # Note: Database.list_profiles takes (limit, offset) order
-        profiles = await db.list_profiles(limit, offset)
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(profiles),
-                "offset": offset,
-                "limit": limit,
-                "profiles": profiles,
-            },
-            indent=2,
-        )
-    except Exception as e:
-        logger.error(f"Error listing profiles: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def get_profile_stats() -> str:
-    """
-    Get statistics about the profile database.
-
-    Returns:
-        JSON string containing database statistics
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        stats = await db.get_profile_stats()
-        return json.dumps({"success": True, "stats": stats}, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting stats: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.resource("nostr://profiles/{pubkey}")
-async def get_profile_resource(pubkey: str) -> str:
-    """
-    Get a Nostr profile as a resource.
-
-    Args:
-        pubkey: The public key of the profile to retrieve
-
-    Returns:
-        The profile data as a formatted string
-    """
-    if not db:
-        return "Error: Database not initialized"
-
-    try:
-        # Use get_resource_data with profile URI
-        resource_uri = f"nostr://{pubkey}/profile"
-        profile = await db.get_resource_data(resource_uri)
-        if profile:
-            # Add pubkey to the profile data
-            profile["pubkey"] = pubkey
-            return json.dumps(profile, indent=2)
-        else:
-            return "Profile not found"
-    except Exception as e:
-        logger.error(f"Error getting profile resource: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.tool()
-async def search_business_profiles(
-    query: str = "", business_type: str = "", limit: int = 10
-) -> str:
-    """
-    Search for business Nostr profiles with specific business type tags.
-
-    Filters profiles that have:
-    - Tag "L" with value "business.type"
-    - Tag "l" with value matching business_type parameter
-
-    Args:
-        query: The search term to look for in profile content (optional)
-        business_type: Business type filter - "retail", "restaurant", "services", "business", "entertainment", "other", or empty for all business types
-        limit: Maximum number of results to return (default: 10)
-
-    Returns:
-        JSON string containing matching business profiles with business_type included
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        # Convert empty string to None for database method
         query_param = query if query else ""
         business_type_param = business_type if business_type else None
 
-        # Get all business profiles matching criteria
         profiles = await db.search_business_profiles(query_param, business_type_param)
         limited_profiles = profiles[:limit]
 
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(limited_profiles),
-                "query": query,
-                "business_type_filter": business_type or "all",
-                "profiles": limited_profiles,
-            },
-            indent=2,
-        )
+        return {
+            "success": True,
+            "count": len(limited_profiles),
+            "query": query,
+            "business_type_filter": business_type or "all",
+            "profiles": limited_profiles,
+        }
     except Exception as e:
         logger.error(f"Error searching business profiles: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}
 
 
-@app.tool()
-async def get_business_types() -> str:
-    """
-    Get the available business types for filtering business profiles.
-
-    Returns:
-        JSON string containing the available business type values
-    """
-    business_types = [
-        "retail",
-        "restaurant",
-        "services",
-        "business",
-        "entertainment",
-        "other",
-    ]
-
-    return json.dumps(
-        {
-            "success": True,
-            "business_types": business_types,
-            "description": "Available values for business_type parameter in search_business_profiles",
-        },
-        indent=2,
-    )
-
-
-@app.tool()
-async def explain_profile_tags(tags_json: str) -> str:
-    """
-    Parse and explain profile tags in a human-readable format.
-
-    Args:
-        tags_json: JSON string of tags array from a profile
-
-    Returns:
-        JSON string with parsed and explained tag information
-    """
-    try:
-        tags = json.loads(tags_json)
-
-        explanation = {
-            "success": True,
-            "tag_count": len(tags),
-            "parsed_tags": [],
-            "business_info": {},
-            "other_labels": [],
-        }
-
-        for tag in tags:
-            if len(tag) >= 2:
-                tag_type = tag[0]
-                tag_value = tag[1]
-
-                parsed_tag = {"type": tag_type, "value": tag_value, "description": ""}
-
-                # Add descriptions for common tag types
-                if tag_type == "L":
-                    parsed_tag["description"] = f"Label namespace: {tag_value}"
-                    if tag_value == "business.type":
-                        explanation["business_info"]["has_business_namespace"] = True
-                elif tag_type == "l":
-                    parsed_tag["description"] = f"Label value: {tag_value}"
-                    if tag_value in [
-                        "retail",
-                        "restaurant",
-                        "services",
-                        "business",
-                        "entertainment",
-                        "other",
-                    ]:
-                        explanation["business_info"]["business_type"] = tag_value
-                        parsed_tag["description"] += f" (Business type: {tag_value})"
-                    else:
-                        explanation["other_labels"].append(tag_value)
-                elif tag_type == "d":
-                    parsed_tag["description"] = f"Event identifier: {tag_value}"
-                elif tag_type == "e":
-                    parsed_tag["description"] = f"Referenced event: {tag_value}"
-                elif tag_type == "p":
-                    parsed_tag["description"] = f"Referenced pubkey: {tag_value}"
-                elif tag_type == "t":
-                    parsed_tag["description"] = f"Business category: {tag_value}"
-                elif tag_type == "r":
-                    parsed_tag["description"] = f"Reference/URL: {tag_value}"
-                else:
-                    parsed_tag["description"] = (
-                        f"Custom tag type '{tag_type}' with value '{tag_value}'"
-                    )
-
-                explanation["parsed_tags"].append(parsed_tag)
-
-        # Determine if this is a business profile
-        is_business = (
-            explanation["business_info"].get("has_business_namespace", False)
-            and "business_type" in explanation["business_info"]
-        )
-        explanation["is_business_profile"] = is_business
-
-        return json.dumps(explanation, indent=2)
-
-    except json.JSONDecodeError:
-        return json.dumps({"success": False, "error": "Invalid JSON format for tags"})
-    except Exception as e:
-        return json.dumps({"success": False, "error": str(e)})
-
-
-@app.tool()
-async def search_stalls(query: str = "", pubkey: str = "", limit: int = 10) -> str:
-    """
-    Search for Nostr marketplace stalls (kind 30017 events).
-
-    Args:
-        query: The search term to look for in stall content (name, description)
-        pubkey: Optional pubkey to limit search to a specific merchant's stalls
-        limit: Maximum number of results to return (default: 10)
-
-    Returns:
-        JSON string containing matching stalls
-    """
+async def tool_get_profile_stats(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get statistics about the profile database."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
 
     try:
-        # Convert empty string to None for database method
-        pubkey_param = pubkey if pubkey else None
-
-        # Get stalls matching criteria
-        stalls = await db.search_stalls(query, pubkey_param)
-        limited_stalls = stalls[:limit]
-
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(limited_stalls),
-                "query": query,
-                "pubkey_filter": pubkey or "all",
-                "stalls": limited_stalls,
-            },
-            indent=2,
-        )
+        stats = await db.get_profile_stats()
+        return {"success": True, "stats": stats}
     except Exception as e:
-        logger.error(f"Error searching stalls: {e}")
-        return json.dumps({"error": str(e)})
+        logger.error(f"Error getting stats: {e}")
+        return {"error": str(e)}
 
 
-@app.tool()
-async def list_all_stalls(offset: int = 0, limit: int = 20) -> str:
-    """
-    List all marketplace stalls in the database with pagination.
-
-    Args:
-        offset: Number of stalls to skip (for pagination)
-        limit: Maximum number of stalls to return (default: 20, max: 50)
-
-    Returns:
-        JSON string containing the list of stalls
-    """
+async def tool_refresh_profiles_from_nostr(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Manually trigger a refresh of the database."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        # Clamp limit to reasonable bounds
-        limit = max(1, min(limit, 50))
-        offset = max(0, offset)
-
-        stalls = await db.list_stalls(limit, offset)
-
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(stalls),
-                "offset": offset,
-                "limit": limit,
-                "stalls": stalls,
-            },
-            indent=2,
-        )
-    except Exception as e:
-        logger.error(f"Error listing stalls: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def get_stall_by_pubkey_and_dtag(pubkey: str, d_tag: str) -> str:
-    """
-    Get a specific marketplace stall by its pubkey and d-tag identifier.
-
-    Args:
-        pubkey: The merchant's public key
-        d_tag: The stall's unique identifier (d-tag)
-
-    Returns:
-        JSON string containing the stall data
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        stall = await db.get_stall_by_pubkey_and_dtag(pubkey, d_tag)
-
-        if stall:
-            return json.dumps(
-                {
-                    "success": True,
-                    "stall": stall,
-                },
-                indent=2,
-            )
-        else:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": f"Stall not found for pubkey: {pubkey}, d_tag: {d_tag}",
-                }
-            )
-    except Exception as e:
-        logger.error(f"Error getting stall: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def get_stall_stats() -> str:
-    """
-    Get statistics about marketplace stalls in the database.
-
-    Returns:
-        JSON string containing stall statistics
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        stats = await db.get_stall_stats()
-        return json.dumps({"success": True, "stats": stats}, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting stall stats: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.resource("nostr://stalls/{pubkey}")
-async def get_stalls_resource(pubkey: str) -> str:
-    """
-    Get all stalls for a merchant as a resource.
-
-    Args:
-        pubkey: The merchant's public key
-
-    Returns:
-        The stalls data as a formatted string
-    """
-    if not db:
-        return "Error: Database not initialized"
-
-    try:
-        # Use get_resource_data with stalls URI
-        resource_uri = f"nostr://{pubkey}/stalls"
-        stalls_data = await db.get_resource_data(resource_uri)
-        if stalls_data:
-            return json.dumps(stalls_data, indent=2)
-        else:
-            return json.dumps({"stalls": []}, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting stalls resource: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.resource("nostr://stall/{pubkey}/{d_tag}")
-async def get_stall_resource(pubkey: str, d_tag: str) -> str:
-    """
-    Get a specific stall as a resource.
-
-    Args:
-        pubkey: The merchant's public key
-        d_tag: The stall's unique identifier
-
-    Returns:
-        The stall data as a formatted string
-    """
-    if not db:
-        return "Error: Database not initialized"
-
-    try:
-        # Use get_resource_data with stall URI
-        resource_uri = f"nostr://{pubkey}/stall/{d_tag}"
-        stall_data = await db.get_resource_data(resource_uri)
-        if stall_data:
-            return json.dumps(stall_data, indent=2)
-        else:
-            return "Stall not found"
-    except Exception as e:
-        logger.error(f"Error getting stall resource: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.tool()
-async def search_products(query: str = "", pubkey: str = "", limit: int = 10) -> str:
-    """
-    Search for Nostr marketplace products (kind 30018 events).
-
-    Args:
-        query: The search term to look for in product content (name, description)
-        pubkey: Optional pubkey to limit search to a specific merchant's products
-        limit: Maximum number of results to return (default: 10)
-
-    Returns:
-        JSON string containing matching products
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        # Convert empty string to None for database method
-        pubkey_param = pubkey if pubkey else None
-
-        # Get products matching criteria
-        products = await db.search_products(query, pubkey_param)
-        limited_products = products[:limit]
-
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(limited_products),
-                "query": query,
-                "pubkey_filter": pubkey or "all",
-                "products": limited_products,
-            },
-            indent=2,
-        )
-    except Exception as e:
-        logger.error(f"Error searching products: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def list_all_products(offset: int = 0, limit: int = 20) -> str:
-    """
-    List all marketplace products in the database with pagination.
-
-    Args:
-        offset: Number of products to skip (for pagination)
-        limit: Maximum number of products to return (default: 20, max: 50)
-
-    Returns:
-        JSON string containing the list of products
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        # Clamp limit to reasonable bounds
-        limit = max(1, min(limit, 50))
-        offset = max(0, offset)
-
-        products = await db.list_products(limit, offset)
-
-        return json.dumps(
-            {
-                "success": True,
-                "count": len(products),
-                "offset": offset,
-                "limit": limit,
-                "products": products,
-            },
-            indent=2,
-        )
-    except Exception as e:
-        logger.error(f"Error listing products: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def get_product_by_pubkey_and_dtag(pubkey: str, d_tag: str) -> str:
-    """
-    Get a specific marketplace product by its pubkey and d-tag identifier.
-
-    Args:
-        pubkey: The merchant's public key
-        d_tag: The product's unique identifier (d-tag)
-
-    Returns:
-        JSON string containing the product data
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        product = await db.get_product_by_pubkey_and_dtag(pubkey, d_tag)
-
-        if product:
-            return json.dumps(
-                {
-                    "success": True,
-                    "product": product,
-                },
-                indent=2,
-            )
-        else:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": f"Product not found for pubkey: {pubkey}, d_tag: {d_tag}",
-                }
-            )
-    except Exception as e:
-        logger.error(f"Error getting product: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.tool()
-async def get_product_stats() -> str:
-    """
-    Get statistics about marketplace products in the database.
-
-    Returns:
-        JSON string containing product statistics
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
-
-    try:
-        stats = await db.get_product_stats()
-        return json.dumps({"success": True, "stats": stats}, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting product stats: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@app.resource("nostr://products/{pubkey}")
-async def get_products_resource(pubkey: str) -> str:
-    """
-    Get all products for a merchant as a resource (same as catalog).
-
-    Args:
-        pubkey: The merchant's public key
-
-    Returns:
-        The products data as a formatted string
-    """
-    if not db:
-        return "Error: Database not initialized"
-
-    try:
-        # Use get_resource_data with catalog URI
-        resource_uri = f"nostr://{pubkey}/catalog"
-        products_data = await db.get_resource_data(resource_uri)
-        if products_data:
-            return json.dumps(products_data, indent=2)
-        else:
-            return json.dumps({"products": []}, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting products resource: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.resource("nostr://product/{pubkey}/{d_tag}")
-async def get_product_resource(pubkey: str, d_tag: str) -> str:
-    """
-    Get a specific product as a resource.
-
-    Args:
-        pubkey: The merchant's public key
-        d_tag: The product's unique identifier
-
-    Returns:
-        The product data as a formatted string
-    """
-    if not db:
-        return "Error: Database not initialized"
-
-    try:
-        # Use get_resource_data with product URI
-        resource_uri = f"nostr://{pubkey}/product/{d_tag}"
-        product_data = await db.get_resource_data(resource_uri)
-        if product_data:
-            return json.dumps(product_data, indent=2)
-        else:
-            return "Product not found"
-    except Exception as e:
-        logger.error(f"Error getting product resource: {e}")
-        return f"Error: {str(e)}"
-
-
-@app.tool()
-async def refresh_profiles_from_nostr() -> str:
-    """
-    Manually trigger a refresh of the database by searching for new business profiles from Nostr relays.
-
-    This will search for kind:0 profiles that have the tag "L" "business.type" from the configured relays.
-
-    Returns:
-        JSON string containing the refresh result
-    """
-    await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
 
     try:
         await refresh_database()
         stats = await db.get_profile_stats()
-        return json.dumps(
-            {
-                "success": True,
-                "message": "Database refresh completed",
-                "current_stats": stats,
-            },
-            indent=2,
-        )
+        return {
+            "success": True,
+            "message": "Database refresh completed",
+            "current_stats": stats,
+        }
     except Exception as e:
         logger.error(f"Error in manual refresh: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}
 
 
-@app.tool()
-async def get_refresh_status() -> str:
-    """
-    Get the status of the automatic refresh system.
-
-    Returns:
-        JSON string containing refresh configuration and status
-    """
-    global refresh_task, nostr_client
-
-    status = {
-        "success": True,
-        "refresh_interval_seconds": REFRESH_INTERVAL,
-        "refresh_interval_minutes": REFRESH_INTERVAL / 60,
-        "configured_relays": DEFAULT_RELAYS,
-        "refresh_task_running": refresh_task is not None and not refresh_task.done(),
-        "nostr_client_connected": nostr_client is not None,
-    }
-
-    return json.dumps(status, indent=2)
-
-
-@app.tool()
-async def clear_database() -> str:
-    """
-    Clear all data from the database.
-
-    WARNING: This will permanently delete all stored profile data.
-
-    Returns:
-        JSON string containing the operation result
-    """
+async def tool_list_all_profiles(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """List all profiles in the database."""
     await ensure_db_initialized()
-    if not db:
-        return json.dumps({"error": "Database not initialized"})
+    db = await get_shared_database()
+
+    limit = arguments.get("limit", 100)
 
     try:
-        success = await db.clear_all_data()
-        if success:
-            return json.dumps(
-                {"success": True, "message": "Database cleared successfully"}, indent=2
-            )
+        profiles = await db.search_profiles("")  # Empty query returns all
+        limited_profiles = profiles[:limit]
+        return {
+            "success": True,
+            "count": len(limited_profiles),
+            "total_available": len(profiles),
+            "profiles": limited_profiles,
+        }
+    except Exception as e:
+        logger.error(f"Error listing profiles: {e}")
+        return {"error": str(e)}
+
+
+async def tool_get_business_types(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get all available business types."""
+    await ensure_db_initialized()
+    db = await get_shared_database()
+
+    try:
+        business_types = await db.get_business_types()
+        return {
+            "success": True,
+            "business_types": business_types,
+        }
+    except Exception as e:
+        logger.error(f"Error getting business types: {e}")
+        return {"error": str(e)}
+
+
+async def tool_explain_profile_tags(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Explain Nostr profile tags."""
+    tags_json = arguments.get("tags_json", "")
+
+    try:
+        tags = json.loads(tags_json)
+
+        explanations = []
+        for tag in tags:
+            if not isinstance(tag, list) or len(tag) < 2:
+                continue
+
+            tag_type = tag[0]
+            tag_value = tag[1] if len(tag) > 1 else ""
+
+            if tag_type == "L":
+                explanations.append(f"Label namespace: {tag_value}")
+            elif tag_type == "l":
+                namespace = tag[2] if len(tag) > 2 else ""
+                explanations.append(f"Label: {tag_value} (namespace: {namespace})")
+            elif tag_type == "t":
+                explanations.append(f"Hashtag: #{tag_value}")
+            elif tag_type == "p":
+                explanations.append(f"Person reference: {tag_value}")
+            elif tag_type == "e":
+                explanations.append(f"Event reference: {tag_value}")
+            else:
+                explanations.append(f"Tag type '{tag_type}': {tag_value}")
+
+        return {
+            "success": True,
+            "explanation": "; ".join(explanations),
+            "tag_breakdown": [
+                {"type": tag[0], "value": tag[1] if len(tag) > 1 else "", "raw": tag}
+                for tag in tags
+            ],
+        }
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"Invalid JSON: {e}"}
+    except Exception as e:
+        logger.error(f"Error explaining tags: {e}")
+        return {"error": str(e)}
+
+
+async def tool_get_refresh_status(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Get the status of the database refresh process."""
+    global refresh_task, nostr_client
+
+    try:
+        return {
+            "success": True,
+            "database_initialized": True,
+            "refresh_task_running": refresh_task is not None
+            and not refresh_task.done(),
+            "configured_relays": DEFAULT_RELAYS,
+            "nostr_client_connected": nostr_client is not None,
+        }
+    except Exception as e:
+        logger.error(f"Error getting refresh status: {e}")
+        return {"error": str(e)}
+
+
+async def tool_clear_database(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Clear all profiles from the database."""
+    await ensure_db_initialized()
+    db = await get_shared_database()
+
+    try:
+        result = await db.clear_all_data()
+        if result:
+            return {
+                "success": True,
+                "message": "Database cleared successfully",
+            }
         else:
-            return json.dumps(
-                {"success": False, "error": "Failed to clear database"}, indent=2
-            )
+            return {
+                "success": False,
+                "error": "Failed to clear database",
+            }
     except Exception as e:
         logger.error(f"Error clearing database: {e}")
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}
 
 
+# Tool registry
+TOOL_REGISTRY = {
+    "search_profiles": tool_search_profiles,
+    "get_profile_by_pubkey": tool_get_profile_by_pubkey,
+    "search_business_profiles": tool_search_business_profiles,
+    "get_profile_stats": tool_get_profile_stats,
+    "refresh_profiles_from_nostr": tool_refresh_profiles_from_nostr,
+    "list_all_profiles": tool_list_all_profiles,
+    "get_business_types": tool_get_business_types,
+    "explain_profile_tags": tool_explain_profile_tags,
+    "get_refresh_status": tool_get_refresh_status,
+    "clear_database": tool_clear_database,
+}
+
+
+async def handle_mcp_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle MCP JSON-RPC request."""
+    method = request_data.get("method")
+    params = request_data.get("params", {})
+    request_id = request_data.get("id")
+
+    try:
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": MCP_SERVER_INFO["protocolVersion"],
+                    "capabilities": MCP_SERVER_INFO["capabilities"],
+                    "serverInfo": {
+                        "name": MCP_SERVER_INFO["name"],
+                        "version": MCP_SERVER_INFO["version"],
+                    },
+                },
+            }
+
+        elif method == "tools/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": AVAILABLE_TOOLS},
+            }
+
+        elif method == "tools/call":
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+
+            if tool_name not in TOOL_REGISTRY:
+                raise ValueError(f"Unknown tool: {tool_name}")
+
+            result = await TOOL_REGISTRY[tool_name](arguments)
+
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(result, indent=2)}]
+                },
+            }
+
+        elif method == "resources/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"resources": AVAILABLE_RESOURCES},
+            }
+
+        elif method == "resources/read":
+            uri = params.get("uri", "")
+            # Handle resource reading (simplified for now)
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps(
+                                {"message": "Resource reading not fully implemented"}
+                            ),
+                        }
+                    ]
+                },
+            }
+
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+    except Exception as e:
+        logger.error(f"Error handling MCP request: {e}")
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32603, "message": "Internal error", "data": str(e)},
+        }
+
+
+@app.post("/mcp")
+async def mcp_endpoint(request: Request):
+    """Main MCP endpoint for JSON-RPC requests with optional SSE streaming."""
+    try:
+        request_data = await request.json()
+
+        # Check if client wants streaming response via Accept header
+        accept_header = request.headers.get("accept", "")
+        wants_streaming = "text/event-stream" in accept_header
+
+        if wants_streaming:
+            # Return Server-Sent Events stream
+            async def generate_sse():
+                response = await handle_mcp_request(request_data)
+                # Send the response as SSE
+                yield f"data: {json.dumps(response)}\n\n"
+
+            return StreamingResponse(
+                generate_sse(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "*",
+                },
+            )
+        else:
+            # Return JSON directly for non-streaming clients
+            response = await handle_mcp_request(request_data)
+            return response
+
+    except Exception as e:
+        logger.error(f"Error in MCP endpoint: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/mcp/sse")
+async def mcp_sse_endpoint():
+    """Server-Sent Events endpoint for MCP streaming."""
+
+    async def generate_sse():
+        # Send initial connection message
+        yield f"data: {json.dumps({'type': 'connection', 'status': 'connected'})}\n\n"
+
+        # Keep connection alive
+        try:
+            while True:
+                # Send periodic heartbeat
+                yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': time.time()})}\n\n"
+                await asyncio.sleep(30)  # Heartbeat every 30 seconds
+        except asyncio.CancelledError:
+            yield f"data: {json.dumps({'type': 'connection', 'status': 'disconnected'})}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "nostr-profiles-mcp-server",
+        "version": MCP_SERVER_INFO["version"],
+        "protocol": "MCP over HTTP with SSE",
+        "endpoints": {
+            "mcp": "/mcp (POST - JSON-RPC)",
+            "sse": "/mcp/sse (GET - Server-Sent Events)",
+            "health": "/health (GET)",
+        },
+    }
+
+
+# Include the refresh database and other utility functions from the original server
 async def refresh_database():
     """Refresh the database with new Nostr profile data."""
     global nostr_client
@@ -957,12 +681,9 @@ async def refresh_database():
                 nostr_client = await NostrClient.create(
                     DEFAULT_RELAYS, keys.get_private_key()
                 )
-                # nostr_client.set_logging_level(logging.DEBUG)
                 logger.info(f"Connected to {len(DEFAULT_RELAYS)} Nostr relays")
             except Exception as e:
                 logger.error(f"Failed to create NostrClient: {e}")
-                logger.error(f"DEFAULT_RELAYS value: {DEFAULT_RELAYS}")
-                logger.error(f"DEFAULT_RELAYS type: {type(DEFAULT_RELAYS)}")
                 raise
 
         try:
@@ -1045,14 +766,6 @@ async def refresh_database():
         logger.error(f"Error refreshing database: {e}")
 
 
-def is_business_profile(tags: List[List[str]]) -> bool:
-    """Check if a profile has business.type tags indicating it's a business profile."""
-    for tag in tags:
-        if len(tag) >= 2 and tag[0] == "L" and tag[1] == "business.type":
-            return True
-    return False
-
-
 async def start_refresh_task():
     """Start the periodic refresh task."""
     global refresh_task
@@ -1093,11 +806,28 @@ async def stop_refresh_task():
         logger.info("Stopped refresh task")
 
     if nostr_client:
-        await nostr_client.close()
-        nostr_client = None
-        logger.info("Closed Nostr client connection")
+        try:
+            # Try to close if the method exists
+            if hasattr(nostr_client, "close"):
+                await nostr_client.close()
+            elif hasattr(nostr_client, "disconnect"):
+                await nostr_client.disconnect()
+            # If no close method, just set to None
+        except Exception as e:
+            logger.warning(f"Error closing Nostr client: {e}")
+        finally:
+            nostr_client = None
+            logger.info("Closed Nostr client connection")
+
+
+# Startup and shutdown are now handled by the lifespan context manager
 
 
 if __name__ == "__main__":
-    # FastMCP will handle initialization, just run the server
-    app.run()
+    import uvicorn
+
+    host = getenv("HOST", "0.0.0.0")
+    port = int(getenv("PORT", "8081"))
+
+    logger.info(f"Starting MCP server on http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)

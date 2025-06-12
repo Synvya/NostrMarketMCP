@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Bridge that turns Nostr profile events into an MCP server for AI agents"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
-packages = [{include = "nostr_market_mcp"}]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -19,6 +19,7 @@ pydantic = "^2.4.2"
 click = "^8.1.7"
 aiosqlite = "^0.19.0"
 pytest-mock = "^3.14.0"
+python-dotenv = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.3"
@@ -37,6 +38,9 @@ line-length = 88
 [tool.ruff]
 line-length = 88
 target-version = "py39"
+src = ["src"]
+select = ["E", "F", "I", "N", "W", "B", "UP", "PL", "RUF"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.9"

@@ -1,19 +1,26 @@
 # MCP Server Testing Guide
 
-This guide covers testing the **Model Context Protocol (MCP) Server** for the Nostr Profiles project.
+This guide covers testing the **Model Context Protocol (MCP) over HTTP Server** for the Nostr Profiles project.
 
 ## Overview
 
-The MCP server provides tools and resources for accessing Nostr profile data through the Model Context Protocol. It exposes various functions that can be called by MCP clients (like AI assistants) to search, retrieve, and analyze Nostr profiles, stalls, and products.
+The MCP server provides tools and resources for accessing Nostr profile data through the **Model Context Protocol over HTTP**. It exposes various functions that can be called by MCP clients (like Claude) to search, retrieve, and analyze Nostr profiles using **JSON-RPC over HTTP** with optional **Server-Sent Events (SSE) streaming**.
+
+**🚀 NEW: MCP over HTTP Implementation**
+- **Streamable HTTP**: Single HTTP endpoint accepting JSON-RPC POSTs with SSE streaming responses
+- **Claude Compatible**: Full MCP protocol compliance for Claude and other MCP clients
+- **JSON-RPC Protocol**: Proper MCP over HTTP transport instead of stdio
+- **Real-time Streaming**: Server-Sent Events support for live data streaming
 
 ## Test Files
 
-- **`tests/test_mcp_server.py`** - Comprehensive MCP server tests
-- **`tests/run_mcp_tests.py`** - Test runner for MCP server tests
+- **`tests/test_mcp_server.py`** - Unit tests with mocked database (14 tests)
+- **`tests/test_mcp_integration.py`** - Integration tests with real server (12 tests) ✨ **NEW**
+- **`tests/run_mcp_tests.py`** - Test runner for unit tests
 
 ## MCP Tools Being Tested
 
-### 📊 Profile Tools
+### 📊 Profile Tools (via JSON-RPC)
 - `search_profiles(query, limit)` - Search for profiles by content
 - `get_profile_by_pubkey(pubkey)` - Get specific profile by public key
 - `list_all_profiles(offset, limit)` - List all profiles with pagination
@@ -22,22 +29,17 @@ The MCP server provides tools and resources for accessing Nostr profile data thr
 - `get_business_types()` - Get available business types
 - `explain_profile_tags(tags_json)` - Explain profile tags
 
-### 🏪 Stall Tools
-- `search_stalls(query, pubkey, limit)` - Search for marketplace stalls
-- `list_all_stalls(offset, limit)` - List all stalls with pagination
-- `get_stall_by_pubkey_and_dtag(pubkey, d_tag)` - Get specific stall
-- `get_stall_stats()` - Get stall statistics
-
-### 🛍️ Product Tools
-- `search_products(query, pubkey, limit)` - Search for products
-- `list_all_products(offset, limit)` - List all products with pagination
-- `get_product_by_pubkey_and_dtag(pubkey, d_tag)` - Get specific product
-- `get_product_stats()` - Get product statistics
-
 ### 🔧 Utility Tools
 - `refresh_profiles_from_nostr()` - Trigger manual database refresh
 - `get_refresh_status()` - Get refresh task status
 - `clear_database()` - Clear all database data
+
+### 📄 MCP Protocol Methods ✨ **NEW**
+- `initialize` - Server initialization and capability negotiation
+- `tools/list` - Enumerate available tools
+- `tools/call` - Execute specific tools with arguments
+- `resources/list` - List available resources
+- `resources/read` - Read specific resource data
 
 ### 📄 Resources
 - `nostr://profiles/{pubkey}` - Profile resource endpoint
@@ -50,68 +52,153 @@ The MCP server provides tools and resources for accessing Nostr profile data thr
 
 ### Prerequisites
 
-No server startup required - tests use mocked database!
-
 ```bash
 # Ensure dependencies are installed
 pip install -r requirements.txt
 ```
 
-### Run All MCP Tests
+### Run Unit Tests (Mocked Database)
 
 ```bash
 # Using the MCP test runner (recommended)
 cd tests && python run_mcp_tests.py
-```
 
 # Using pytest directly
-```bash
 pytest tests/test_mcp_server.py -v
+```
+
+### Run Integration Tests (Real MCP over HTTP Server) ✨ **NEW**
+
+```bash
+# Run all integration tests
+pytest tests/test_mcp_integration.py -v
+
+# Run specific integration test
+pytest tests/test_mcp_integration.py::TestMCPServerIntegration::test_list_tools -v
+
+# Run with verbose server output
+pytest tests/test_mcp_integration.py -v -s
+```
+
+### Run All MCP Tests
+
+```bash
+# Run both unit and integration tests
+pytest tests/test_mcp_server.py tests/test_mcp_integration.py -v
+
+# Or run separately
+python run_mcp_tests.py && pytest tests/test_mcp_integration.py -v
 ```
 
 ### Run Specific Tests
 
 ```bash
-# Test a specific test class
+# Test a specific unit test class
 pytest tests/test_mcp_server.py::TestMCPServer -v
 
-# Test a specific test method
+# Test a specific unit test method
 pytest tests/test_mcp_server.py::TestMCPServer::test_search_profiles_success -v
 
-# Using the test runner for specific tests
-python run_mcp_tests.py TestMCPServer::test_search_profiles_success
+# Test a specific integration test
+pytest tests/test_mcp_integration.py::TestMCPServerIntegration::test_server_connection -v
 ```
 
 ## Test Coverage
 
-### ✅ Tool Function Tests
+### ✅ Unit Tests (Mocked Database)
 - **Success cases**: Valid inputs, expected outputs
 - **Edge cases**: Empty results, missing data
 - **Error handling**: Invalid inputs, database errors
 - **Pagination**: Offset/limit functionality
 - **Search functionality**: Query matching, filtering
 
-### ✅ Resource Tests
-- **Profile resources**: Individual profile data retrieval
-- **Stall resources**: Marketplace stall data
-- **Product resources**: Product catalog data
-- **URI parsing**: Proper resource URI handling
+### ✅ Integration Tests (Real Server) ✨ **NEW**
+- **Server lifecycle**: Startup, cleanup, process management
+- **JSON-RPC Protocol**: Proper MCP over HTTP transport
+- **Tool execution**: Real tool calls via `tools/call` method
+- **Resource access**: Resource listing and reading
+- **Error handling**: Protocol errors, malformed requests
+- **Concurrent access**: Multiple simultaneous requests
+- **SSE Streaming**: Server-Sent Events functionality
+
+### ✅ MCP Protocol Compliance ✨ **NEW**
+- **Initialization**: Proper capability negotiation
+- **Tool listing**: Complete tool enumeration
+- **Tool calling**: Argument passing and result handling
+- **Resource management**: URI-based resource access
+- **Error responses**: Standard JSON-RPC error format
 
 ### ✅ Database Integration
-- **Mock database**: Realistic data simulation
+- **Mock database**: Realistic data simulation (unit tests)
+- **Real database**: Actual SQLite operations (integration tests)
 - **Database errors**: Connection failures, query errors
 - **Data consistency**: Proper data formatting
 - **Async operations**: Proper async/await handling
 
 ### ✅ JSON Response Validation
-- **Response format**: Consistent JSON structure
+- **Response format**: Consistent JSON-RPC structure
 - **Success responses**: Proper success flags and data
 - **Error responses**: Clear error messages
 - **Data types**: Correct data type validation
 
+## MCP over HTTP Architecture ✨ **NEW SECTION**
+
+### Protocol Implementation
+- **Transport**: HTTP with JSON-RPC 2.0
+- **Endpoint**: Single `/mcp` endpoint for all MCP operations
+- **Streaming**: `/mcp/sse` endpoint for Server-Sent Events
+- **Authentication**: Optional Bearer token support
+- **Content-Type**: `application/json` for requests
+- **Response Format**: Standard JSON-RPC 2.0 responses
+
+### Example JSON-RPC Requests
+
+**List Tools:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {}
+}
+```
+
+**Call Tool:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "search_profiles",
+    "arguments": {
+      "query": "test",
+      "limit": 10
+    }
+  }
+}
+```
+
+**Initialize Server:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "test-client",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
 ## Mock Database
 
-The tests use a `MockDatabase` class that simulates real database operations:
+The unit tests use a `MockDatabase` class that simulates real database operations:
 
 ```python
 class MockDatabase:
@@ -166,9 +253,21 @@ class MockDatabase:
 - Invalid JSON inputs
 - Database connection errors
 - Malformed queries
+- JSON-RPC protocol errors ✨ **NEW**
+- Invalid MCP method calls ✨ **NEW**
 
-## Example Test Run
+### 🌐 Integration Test Scenarios ✨ **NEW**
+- Server startup and shutdown
+- Real HTTP requests to `/mcp` endpoint
+- JSON-RPC protocol compliance
+- Tool execution with real database
+- Resource access and URI handling
+- Concurrent request handling
+- Process cleanup and port management
 
+## Example Test Runs
+
+### Unit Tests
 ```bash
 $ cd tests && python run_mcp_tests.py
 
@@ -194,33 +293,62 @@ tests/test_mcp_server.py::TestMCPServer::test_tools_without_database PASSED
 🎉 All MCP server tests passed!
 ```
 
+### Integration Tests ✨ **NEW**
+```bash
+$ pytest tests/test_mcp_integration.py -v
+
+=========================================== test session starts ============================================
+platform darwin -- Python 3.12.8, pytest-7.4.4, pluggy-1.6.0
+collected 12 items
+
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_server_connection PASSED               [  8%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_list_tools PASSED                      [ 16%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_list_resources PASSED                  [ 25%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_search_profiles_tool PASSED            [ 33%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_get_profile_stats_tool PASSED          [ 41%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_get_business_types_tool PASSED         [ 50%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_explain_profile_tags_tool PASSED       [ 58%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_search_business_profiles_tool PASSED   [ 66%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_get_refresh_status_tool PASSED         [ 75%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_tool_error_handling PASSED             [ 83%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_concurrent_tool_calls PASSED           [ 91%]
+tests/test_mcp_integration.py::TestMCPServerIntegration::test_server_resource_cleanup PASSED         [100%]
+
+============================================ 12 passed in 36.85s ============================================
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Import errors**:
-   ```
-   ModuleNotFoundError: No module named 'nostr_profiles_mcp_server'
-   ```
-   **Solution**: Run tests from project root directory
+**Unit Tests:**
+- **Import errors**: Ensure all dependencies are installed
+- **Mock database issues**: Check mock data structure
+- **Async test failures**: Verify pytest-asyncio is installed
 
-2. **Mock import issues**:
-   ```
-   ImportError: cannot import name 'synvya_sdk'
-   ```
-   **Solution**: Tests use mocks automatically when synvya_sdk unavailable
+**Integration Tests:** ✨ **NEW**
+- **Port conflicts**: Tests use port 8082, ensure it's free
+- **Server startup failures**: Check server logs in test output
+- **JSON-RPC errors**: Verify request format and endpoint
+- **Process cleanup**: Tests automatically clean up server processes
 
-3. **Async test issues**:
-   ```
-   TypeError: object 'coroutine' is not callable
-   ```
-   **Solution**: Ensure proper async/await usage in tests
+### Debug Integration Tests ✨ **NEW**
+```bash
+# Run with verbose server output
+pytest tests/test_mcp_integration.py -v -s --tb=long
 
-4. **Database state issues**:
-   ```
-   AssertionError: Database not properly cleaned
-   ```
-   **Solution**: Each test uses fresh MockDatabase instance
+# Check for port conflicts
+lsof -i :8082
+
+# Run single integration test for debugging
+pytest tests/test_mcp_integration.py::TestMCPServerIntegration::test_list_tools -v -s
+```
+
+### Performance Considerations ✨ **NEW**
+- **Integration tests**: Take ~3 seconds per test for server startup
+- **Unit tests**: Run in milliseconds with mocked database
+- **Parallel execution**: Integration tests run sequentially to avoid port conflicts
+- **Cleanup**: Automatic server process termination and port cleanup
 
 ## Integration with CI/CD
 

@@ -2,7 +2,7 @@
 Real MCP Server Integration Tests
 
 Tests the MCP server by launching an actual server process and communicating
-with it via JSON-RPC over stdio, similar to how API tests launch a real HTTP server.
+with it via HTTP requests, since our MCP server runs as a FastAPI web server.
 """
 
 import asyncio
@@ -14,17 +14,19 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 import pytest
 import pytest_asyncio
 
 
 class MCPServerTestClient:
-    """Test client for communicating with MCP server via JSON-RPC over stdio."""
+    """Test client for communicating with MCP server via HTTP."""
 
     def __init__(self):
         self.server_process: Optional[subprocess.Popen] = None
         self.temp_db_path: Optional[str] = None
-        self.request_id = 0
+        self.base_url = "http://localhost:8082"
+        self.client: Optional[httpx.AsyncClient] = None
 
     async def start_server(self):
         """Start the MCP server process."""
@@ -37,10 +39,11 @@ class MCPServerTestClient:
         env["DATABASE_PATH"] = self.temp_db_path
         env["ENVIRONMENT"] = "test"
         env["MCP_BEARER"] = "test_token"
+        env["PORT"] = "8082"  # Use a different port for tests
 
-        # Start server process
+        # Start server process using the runner script
         self.server_process = subprocess.Popen(
-            ["python", "nostr_profiles_mcp_server.py"],
+            ["python", "scripts/run_mcp_server.py"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -56,114 +59,132 @@ class MCPServerTestClient:
             stderr = self.server_process.stderr.read()
             raise RuntimeError(f"MCP server failed to start. stderr: {stderr}")
 
-        # Initialize the session with handshake
-        await self._initialize_session()
+        # Create HTTP client
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
 
-    async def _initialize_session(self):
-        """Initialize MCP session with proper handshake."""
-        # Send initialize request
-        init_request = {
-            "jsonrpc": "2.0",
-            "id": self._next_id(),
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"roots": {"listChanged": True}, "sampling": {}},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"},
-            },
-        }
-
-        response = await self._send_request(init_request)
-
-        # Send initialized notification
-        initialized_notification = {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-        }
-
-        await self._send_notification(initialized_notification)
-
-    def _next_id(self):
-        """Get next request ID."""
-        self.request_id += 1
-        return self.request_id
-
-    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a JSON-RPC request and return the response."""
-        if not self.server_process:
-            raise RuntimeError("Server not started")
-
-        # Send request
-        request_line = json.dumps(request) + "\n"
-        self.server_process.stdin.write(request_line)
-        self.server_process.stdin.flush()
-
-        # Read response
-        response_line = self.server_process.stdout.readline()
-        if not response_line:
-            raise RuntimeError("No response from server")
-
-        return json.loads(response_line)
-
-    async def _send_notification(self, notification: Dict[str, Any]):
-        """Send a JSON-RPC notification (no response expected)."""
-        if not self.server_process:
-            raise RuntimeError("Server not started")
-
-        notification_line = json.dumps(notification) + "\n"
-        self.server_process.stdin.write(notification_line)
-        self.server_process.stdin.flush()
+        # Test if server is responding
+        try:
+            response = await self.client.get("/health")
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Server health check failed: {response.status_code}"
+                )
+        except Exception as e:
+            raise RuntimeError(f"Failed to connect to server: {e}")
 
     async def call_tool(
         self, tool_name: str, arguments: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Call an MCP tool and return the result."""
-        request = {
+        """Call an MCP tool via JSON-RPC and return the result."""
+        if not self.client:
+            raise RuntimeError("Client not initialized")
+
+        request_data = {
             "jsonrpc": "2.0",
-            "id": self._next_id(),
+            "id": 1,
             "method": "tools/call",
             "params": {"name": tool_name, "arguments": arguments},
         }
 
-        response = await self._send_request(request)
+        response = await self.client.post(
+            "/mcp",
+            json=request_data,
+            headers={"Content-Type": "application/json"},
+        )
 
-        if "error" in response:
-            raise RuntimeError(f"Tool call failed: {response['error']}")
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"MCP request failed: {response.status_code} - {response.text}"
+            )
 
-        return response.get("result", {})
+        result = response.json()
+        if "error" in result:
+            raise RuntimeError(f"MCP error: {result['error']}")
+
+        return result["result"]
 
     async def list_tools(self) -> List[Dict[str, Any]]:
-        """List available tools from the MCP server."""
-        request = {"jsonrpc": "2.0", "id": self._next_id(), "method": "tools/list"}
+        """List available tools via MCP server."""
+        if not self.client:
+            raise RuntimeError("Client not initialized")
 
-        response = await self._send_request(request)
+        request_data = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 
-        if "error" in response:
-            raise RuntimeError(f"List tools failed: {response['error']}")
+        response = await self.client.post(
+            "/mcp",
+            json=request_data,
+            headers={"Content-Type": "application/json"},
+        )
 
-        return response.get("result", {}).get("tools", [])
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to list tools: {response.status_code}")
+
+        result = response.json()
+        if "error" in result:
+            raise RuntimeError(f"MCP error: {result['error']}")
+
+        return result["result"]["tools"]
 
     async def list_resources(self) -> List[Dict[str, Any]]:
-        """List available resources from the MCP server."""
-        request = {"jsonrpc": "2.0", "id": self._next_id(), "method": "resources/list"}
+        """List available resources via MCP server."""
+        if not self.client:
+            raise RuntimeError("Client not initialized")
 
-        response = await self._send_request(request)
+        request_data = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "resources/list",
+            "params": {},
+        }
 
-        if "error" in response:
-            raise RuntimeError(f"List resources failed: {response['error']}")
+        response = await self.client.post(
+            "/mcp",
+            json=request_data,
+            headers={"Content-Type": "application/json"},
+        )
 
-        return response.get("result", {}).get("resources", [])
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to list resources: {response.status_code}")
+
+        result = response.json()
+        if "error" in result:
+            raise RuntimeError(f"MCP error: {result['error']}")
+
+        return result["result"]["resources"]
 
     async def cleanup(self):
         """Cleanup connections and server process."""
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+
         if self.server_process:
+            # First try to terminate gracefully
             self.server_process.terminate()
             try:
-                self.server_process.wait(timeout=5)
+                self.server_process.wait(timeout=3)
             except subprocess.TimeoutExpired:
+                # If graceful termination fails, force kill
                 self.server_process.kill()
                 self.server_process.wait()
             self.server_process = None
+
+        # Also kill any remaining processes on port 8082 to ensure cleanup
+        import subprocess as sp
+
+        try:
+            # Find and kill any processes using port 8082
+            result = sp.run(["lsof", "-ti", ":8082"], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                for pid in pids:
+                    if pid:
+                        try:
+                            sp.run(["kill", pid], check=False)
+                        except:
+                            pass
+        except:
+            pass  # Ignore errors in cleanup
 
         if self.temp_db_path and os.path.exists(self.temp_db_path):
             os.unlink(self.temp_db_path)

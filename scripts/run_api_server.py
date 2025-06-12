@@ -12,6 +12,15 @@ project_root = Path(__file__).resolve().parent.parent
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
+# Ensure child processes (e.g., uvicorn reload) can resolve the same modules
+existing_py_path = os.environ.get("PYTHONPATH", "")
+if str(src_path) not in existing_py_path.split(os.pathsep):
+    os.environ["PYTHONPATH"] = (
+        f"{src_path}{os.pathsep}{existing_py_path}"
+        if existing_py_path
+        else str(src_path)
+    )
+
 # Set up environment variables for local development
 os.environ.update(
     {

@@ -10,9 +10,9 @@ import logging
 import os
 from pathlib import Path
 
-from mcp.server import refresh_database, set_shared_database
-
-from .database import Database
+from src.core import Database
+from src.core.shared_database import set_shared_database
+from src.mcp.server import refresh_database
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
