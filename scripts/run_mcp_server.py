@@ -15,5 +15,5 @@ if __name__ == "__main__":
     import subprocess
 
     # Run the main server file directly
-    server_path = Path(__file__).parent / "src" / "mcp" / "main_server.py"
+    server_path = Path(__file__).parent / "src" / "mcp" / "server.py"
     subprocess.run([sys.executable, str(server_path)])

@@ -452,7 +452,7 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
         logger.info("Manual refresh triggered")
 
         # Import refresh functionality
-        from ..mcp.main_server import refresh_database
+        from ..mcp.server import refresh_database
 
         await refresh_database()
 
@@ -502,7 +502,7 @@ async def startup_event():
 
     # Start automatic refresh every hour
     try:
-        from ..mcp.main_server import initialize_db
+        from ..mcp.server import initialize_db
 
         await initialize_db()
         logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
@@ -518,7 +518,7 @@ async def shutdown_event():
 
     # Stop automatic refresh
     try:
-        from ..mcp.main_server import cleanup_db
+        from ..mcp.server import cleanup_db
 
         await cleanup_db()
         logger.info("Automatic refresh stopped")
