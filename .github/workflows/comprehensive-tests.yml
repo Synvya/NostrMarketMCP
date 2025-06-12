@@ -42,7 +42,7 @@ jobs:
 
     - name: Start API server in background
       run: |
-        python simple_secure_server.py &
+        python src/api/server.py &
         echo $! > server.pid
         
     - name: Wait for server to be ready
@@ -127,7 +127,7 @@ jobs:
         echo "🔗 Running API-MCP integration tests..."
         
         # Start API server
-        python simple_secure_server.py &
+        python src/api/server.py &
         API_PID=$!
         echo "Started API server with PID: $API_PID"
         

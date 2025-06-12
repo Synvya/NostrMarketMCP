@@ -37,4 +37,4 @@ ENV ENVIRONMENT=production
 ENV DATABASE_PATH=/app/data/nostr_profiles.db
 
 # Run the secure server
-CMD ["python", "simple_secure_server.py"]
+CMD ["python", "src/api/server.py"]
