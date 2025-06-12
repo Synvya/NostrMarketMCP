@@ -33,7 +33,32 @@ poetry install
 pip install .
 ```
 
-## Usage
+## Quick Start (Reorganized Codebase)
+
+**NEW**: The codebase has been reorganized for better maintainability:
+
+```
+src/
+├── api/           # HTTP API server for web/OpenAI integration
+├── mcp/           # MCP server for Claude/MCP clients  
+└── db/            # Database utilities
+tests/             # All tests and test runners
+```
+
+### Run HTTP API Server (for web/OpenAI integration)
+```bash
+python run_api_server.py
+# Available at http://127.0.0.1:8080
+# API Key: local_test_api_key
+```
+
+### Run MCP Server (for Claude/MCP clients)
+```bash
+python run_mcp_server.py
+# Or use Poetry commands below
+```
+
+## Usage (Advanced)
 
 ```bash
 # Show help
