@@ -17,7 +17,11 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from fastmcp import FastMCP  # External FastMCP package
+except ImportError:
+    # Fallback: use FastAPI as a stand-in during development/testing
+    from fastapi import FastAPI as FastMCP
 
 # Try to import from the real SDK, fall back to mocks for testing
 try:
