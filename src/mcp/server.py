@@ -17,11 +17,25 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
+# ---------------------- FastMCP import / fallback -------------------------
 try:
-    from fastmcp import FastMCP  # External FastMCP package
+    from fastmcp import FastMCP  # Preferred external package
 except ImportError:
-    # Fallback: use FastAPI as a stand-in during development/testing
-    from fastapi import FastAPI as FastMCP
+    from fastapi import FastAPI as _FastAPI
+
+    class FastMCP(_FastAPI):
+        """Lightweight substitute for FastMCP using FastAPI."""
+
+        def __init__(self, title: str = "Nostr Profiles", **kwargs):
+            super().__init__(title=title, **kwargs)
+
+        def run(self, host: str = "0.0.0.0", port: int = 8081, reload: bool = False):
+            import uvicorn
+
+            uvicorn.run("mcp.server:app", host=host, port=port, reload=reload)
+
+
+# --------------------------------------------------------------------------
 
 # Try to import from the real SDK, fall back to mocks for testing
 try:
