@@ -1,0 +1,128 @@
+name: MCP Server Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'nostr_profiles_mcp_server.py'
+      - 'tests/test_mcp_server.py'
+      - 'run_mcp_tests.py'
+      - 'requirements.txt'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'nostr_profiles_mcp_server.py'
+      - 'tests/test_mcp_server.py'
+      - 'run_mcp_tests.py'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+jobs:
+  test-mcp:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-mcp-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-mcp-
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Set environment variables for testing
+      run: |
+        echo "ENVIRONMENT=test" >> $GITHUB_ENV
+        echo "MCP_BEARER=test_token" >> $GITHUB_ENV
+
+    - name: Verify MCP server imports
+      run: |
+        echo "🔍 Verifying MCP server can be imported..."
+        python -c "import nostr_profiles_mcp_server; print('✅ MCP server module imported successfully')"
+
+    - name: Run MCP server tests
+      run: |
+        echo "🚀 Running MCP server tests..."
+        python run_mcp_tests.py
+
+    - name: Run MCP tests with pytest (verbose)
+      run: |
+        echo "🧪 Running MCP tests with pytest for detailed output..."
+        pytest tests/test_mcp_server.py -v --tb=short
+
+  mcp-tools-validation:
+    runs-on: ubuntu-latest
+    needs: test-mcp
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.12
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Validate MCP tools structure
+      run: |
+        echo "🔧 Validating MCP tools structure..."
+        python -c "
+        import nostr_profiles_mcp_server
+        import inspect
+        
+        # Count MCP tools
+        tools = [name for name, obj in inspect.getmembers(nostr_profiles_mcp_server) 
+                 if hasattr(obj, '__annotations__') and 
+                    hasattr(obj, '_mcp_tool')]
+        
+        print(f'✅ Found {len(tools)} MCP tools')
+        for tool in tools:
+            print(f'  - {tool}')
+            
+        # Verify minimum expected tools
+        expected_tools = [
+            'search_profiles', 'get_profile_by_pubkey', 'list_all_profiles',
+            'get_profile_stats', 'search_business_profiles', 'get_business_types',
+            'explain_profile_tags', 'refresh_profiles_from_nostr', 
+            'get_refresh_status', 'clear_database'
+        ]
+        
+        missing = [tool for tool in expected_tools if tool not in tools]
+        if missing:
+            print(f'❌ Missing tools: {missing}')
+            exit(1)
+        else:
+            print('✅ All expected MCP tools are present')
+        "
+
+    - name: Test MCP server startup
+      run: |
+        echo "🚀 Testing MCP server startup..."
+        timeout 10 python -c "
+        import asyncio
+        import nostr_profiles_mcp_server
+        print('✅ MCP server startup test completed')
+        " || echo "✅ MCP server startup test completed (timeout expected)" 

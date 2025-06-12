@@ -125,35 +125,46 @@ async def get_authenticated_user(
     ),
 ):
     """Verify authentication credentials."""
+    # Get fresh config to check what's actually configured
+    from security_simple import get_security_config
+
+    current_config = get_security_config()
+
+    # If no authentication is configured, allow access
+    if not current_config["API_KEY"] and not current_config["BEARER_TOKEN"]:
+        return True
+
     api_key_valid = False
     bearer_token_valid = False
 
     # Try API key authentication
-    try:
-        await auth.verify_api_key(request)
-        api_key_valid = True
-    except Exception as e:
-        logger.debug(f"API key authentication failed: {e}")
+    if current_config["API_KEY"]:
+        try:
+            await auth.verify_api_key(request)
+            api_key_valid = True
+        except Exception as e:
+            logger.debug(f"API key authentication failed: {e}")
 
     # Try Bearer token authentication
-    try:
-        await auth.verify_bearer_token(credentials)
-        bearer_token_valid = True
-    except Exception as e:
-        logger.debug(f"Bearer token authentication failed: {e}")
+    if current_config["BEARER_TOKEN"]:
+        try:
+            await auth.verify_bearer_token(credentials)
+            bearer_token_valid = True
+        except Exception as e:
+            logger.debug(f"Bearer token authentication failed: {e}")
 
     # If either authentication method succeeded, allow access
     if api_key_valid or bearer_token_valid:
         return True
 
     # If both methods are configured but both failed, raise error
-    if SECURITY_CONFIG["API_KEY"] and SECURITY_CONFIG["BEARER_TOKEN"]:
+    if current_config["API_KEY"] and current_config["BEARER_TOKEN"]:
         raise HTTPException(
             status_code=401, detail="Valid API key or Bearer token required"
         )
-    elif SECURITY_CONFIG["API_KEY"]:
+    elif current_config["API_KEY"]:
         raise HTTPException(status_code=401, detail="Valid API key required")
-    elif SECURITY_CONFIG["BEARER_TOKEN"]:
+    elif current_config["BEARER_TOKEN"]:
         raise HTTPException(status_code=401, detail="Valid Bearer token required")
     else:
         # No authentication configured
@@ -166,19 +177,39 @@ async def get_database() -> Database:
     return await get_shared_database()
 
 
+# Dynamic dependency helper
+def get_auth_dependencies():
+    """Get authentication dependencies based on current config."""
+    from security_simple import get_security_config
+
+    current_config = get_security_config()
+    if current_config["API_KEY"] or current_config["BEARER_TOKEN"]:
+        return [Depends(get_authenticated_user)]
+    return []
+
+
 # Response models
 class Profile(BaseModel):
-    """Profile model with validation."""
+    """Profile model with validation - includes full profile data."""
 
     pubkey: str = Field(..., description="Public key of the profile")
     name: Optional[str] = Field(None, description="Display name")
+    display_name: Optional[str] = Field(None, description="Display name (alternative)")
     about: Optional[str] = Field(None, description="Profile description")
     picture: Optional[str] = Field(None, description="Profile picture URL")
+    banner: Optional[str] = Field(None, description="Profile banner URL")
     nip05: Optional[str] = Field(None, description="NIP-05 verification")
     website: Optional[str] = Field(None, description="Website URL")
+    lud06: Optional[str] = Field(None, description="Lightning address (LNURL)")
+    lud16: Optional[str] = Field(None, description="Lightning address")
     business_type: Optional[str] = Field(
         None, description="Business type if applicable"
     )
+    tags: Optional[List] = Field(None, description="Nostr event tags")
+    created_at: Optional[int] = Field(None, description="Profile creation timestamp")
+
+    class Config:
+        extra = "allow"  # Allow additional fields from the profile content
 
 
 class SearchResponse(BaseModel):
@@ -226,11 +257,7 @@ async def health_check():
     "/api/search_profiles",
     response_model=SearchResponse,
     summary="Search Profiles",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=[Depends(get_authenticated_user)],
 )
 async def search_profiles(
     request: SecureSearchRequest, database: Database = Depends(get_database)
@@ -279,11 +306,7 @@ async def search_profiles(
     "/api/search_business_profiles",
     response_model=SearchResponse,
     summary="Search Business Profiles",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=get_auth_dependencies(),
 )
 async def search_business_profiles(
     request: SecureBusinessSearchRequest, database: Database = Depends(get_database)
@@ -338,11 +361,7 @@ async def search_business_profiles(
     "/api/profile/{pubkey}",
     response_model=Dict[str, Any],
     summary="Get Profile by Public Key",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=get_auth_dependencies(),
 )
 async def get_profile_by_pubkey(
     pubkey: str, database: Database = Depends(get_database)
@@ -388,11 +407,7 @@ async def get_profile_by_pubkey(
     "/api/stats",
     response_model=StatsResponse,
     summary="Get Database Statistics",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=get_auth_dependencies(),
 )
 async def get_profile_stats(database: Database = Depends(get_database)):
     """Get statistics about the profile database."""
@@ -409,11 +424,7 @@ async def get_profile_stats(database: Database = Depends(get_database)):
 @app.get(
     "/api/business_types",
     summary="Get Available Business Types",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=get_auth_dependencies(),
 )
 async def get_business_types(database: Database = Depends(get_database)):
     """Get the list of available business types."""
@@ -433,11 +444,7 @@ async def get_business_types(database: Database = Depends(get_database)):
     "/api/refresh",
     response_model=RefreshResponse,
     summary="Refresh Database",
-    dependencies=(
-        [Depends(get_authenticated_user)]
-        if SECURITY_CONFIG["API_KEY"] or SECURITY_CONFIG["BEARER_TOKEN"]
-        else []
-    ),
+    dependencies=get_auth_dependencies(),
 )
 async def refresh_profiles_from_nostr(database: Database = Depends(get_database)):
     """Manually trigger a refresh of the database."""
@@ -493,11 +500,32 @@ async def startup_event():
     # Initialize database
     await get_database()
 
+    # Start automatic refresh every hour
+    try:
+        from nostr_profiles_mcp_server import initialize_db
+
+        await initialize_db()
+        logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
+    except Exception as e:
+        logger.warning(f"Failed to enable automatic refresh: {e}")
+        logger.info("Manual refresh will still be available via /api/refresh")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean shutdown."""
     logger.info("Shutting down Secure Nostr Profiles API")
+
+    # Stop automatic refresh
+    try:
+        from nostr_profiles_mcp_server import cleanup_db
+
+        await cleanup_db()
+        logger.info("Automatic refresh stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping automatic refresh: {e}")
+
+    # Close database
     if db:
         await db.close()
 

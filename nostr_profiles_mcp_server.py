@@ -66,8 +66,8 @@ if NSEC is None:
 else:
     keys = NostrKeys(NSEC)
 
-# Refresh interval in seconds (5 minutes)
-REFRESH_INTERVAL = 300
+# Refresh interval in seconds (1 hour)
+REFRESH_INTERVAL = 3600
 
 # Create the MCP server
 app = FastMCP("Nostr Profiles")
@@ -933,39 +933,17 @@ async def refresh_database():
         # Update database with profile information
         for profile in profiles:
             try:
-                # The Profile objects from async_get_merchants() already have identity tag parsing done
-                # Get all profile fields from the populated Profile object
-                profile_data = {
-                    "public_key": profile.get_public_key("hex"),
-                    "display_name": profile.display_name,
-                    "name": profile.name,
-                    "about": profile.about,
-                    "picture": profile.picture,
-                    "banner": profile.banner,
-                    "nip05": profile.nip05,
-                    "website": profile.website,
-                    "email": profile.email,  # Already parsed from i-tags by synvya-sdk
-                    "phone": profile.phone,  # Already parsed from i-tags by synvya-sdk
-                    "street": profile.street,  # Already parsed from i-tags location by synvya-sdk
-                    "city": profile.city,  # Already parsed from i-tags location by synvya-sdk
-                    "state": profile.state,  # Already parsed from i-tags location by synvya-sdk
-                    "zip_code": profile.zip_code,  # Already parsed from i-tags location by synvya-sdk
-                    "country": profile.country,  # Already parsed from i-tags location by synvya-sdk
-                    "hashtags": profile.hashtags,
-                    "locations": profile.locations,
-                    "bot": profile.bot,
-                    "nip05_validated": profile.nip05_validated,
-                    "namespace": profile.namespace,
-                    "profile_type": (
-                        profile.profile_type.value if profile.profile_type else None
-                    ),
-                    "business_type": (
-                        profile.profile_type.value if profile.profile_type else None
-                    ),  # Use profile_type as business_type
-                    "tags": profile.tags,
-                    "created_at": profile.get_created_at(),
-                    "last_updated": profile.get_created_at(),
-                }
+                # Use the Profile's built-in to_dict() method which handles set serialization
+                profile_data = profile.to_dict()
+
+                # Add additional fields needed by the database
+                profile_data["public_key"] = profile.get_public_key("hex")
+                profile_data["business_type"] = (
+                    profile.profile_type.value if profile.profile_type else None
+                )
+                profile_data["tags"] = getattr(profile, "tags", [])
+                profile_data["created_at"] = profile.get_created_at()
+                profile_data["last_updated"] = profile.get_created_at()
 
                 pubkey = profile_data["public_key"]
                 new_created_at = profile_data["created_at"]
@@ -994,7 +972,7 @@ async def refresh_database():
 
                 if should_update:
                     # Store profile data
-                    result = await db.upsert_profile(resource_uri, profile_data)
+                    result = await db.upsert_profile(profile_data)
                     if result:
                         profile_count += 1
                         action = "Updated" if existing_profile else "Stored"

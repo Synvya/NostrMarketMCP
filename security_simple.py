@@ -15,23 +15,30 @@ from typing import Dict, List, Optional, Set
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
-# Security configuration
-SECURITY_CONFIG = {
-    "API_KEY": os.getenv("API_KEY", ""),
-    "BEARER_TOKEN": os.getenv("BEARER_TOKEN", ""),
-    "ALLOWED_ORIGINS": (
-        os.getenv("ALLOWED_ORIGINS", "").split(",")
-        if os.getenv("ALLOWED_ORIGINS")
-        else []
-    ),
-    "ENVIRONMENT": os.getenv("ENVIRONMENT", "development"),
-    "RATE_LIMIT_REQUESTS": int(os.getenv("RATE_LIMIT_REQUESTS", "100")),
-    "RATE_LIMIT_WINDOW": int(os.getenv("RATE_LIMIT_WINDOW", "60")),
-}
+
+# Security configuration - load dynamically to allow runtime env var changes
+def get_security_config():
+    """Get security configuration, loading fresh from environment."""
+    return {
+        "API_KEY": os.getenv("API_KEY", ""),
+        "BEARER_TOKEN": os.getenv("BEARER_TOKEN", ""),
+        "ALLOWED_ORIGINS": (
+            os.getenv("ALLOWED_ORIGINS", "").split(",")
+            if os.getenv("ALLOWED_ORIGINS")
+            else []
+        ),
+        "ENVIRONMENT": os.getenv("ENVIRONMENT", "development"),
+        "RATE_LIMIT_REQUESTS": int(os.getenv("RATE_LIMIT_REQUESTS", "100")),
+        "RATE_LIMIT_WINDOW": int(os.getenv("RATE_LIMIT_WINDOW", "60")),
+    }
+
+
+# Backward compatibility
+SECURITY_CONFIG = get_security_config()
 
 
 class SecurityError(HTTPException):
@@ -45,11 +52,17 @@ class AuthenticationScheme:
 
     def __init__(self):
         self.security = HTTPBearer(auto_error=False)
-        self.api_key = SECURITY_CONFIG["API_KEY"]
-        self.bearer_token = SECURITY_CONFIG["BEARER_TOKEN"]
+        # Load config fresh each time to support runtime env var changes
+        self._load_config()
+
+    def _load_config(self):
+        """Load fresh configuration from environment variables."""
+        config = get_security_config()
+        self.api_key = config["API_KEY"]
+        self.bearer_token = config["BEARER_TOKEN"]
 
         # Validate configuration in production
-        if SECURITY_CONFIG["ENVIRONMENT"] == "production":
+        if config["ENVIRONMENT"] == "production":
             if not self.api_key or len(self.api_key) < 32:
                 raise ValueError(
                     "API_KEY must be set and at least 32 characters in production"
@@ -65,6 +78,9 @@ class AuthenticationScheme:
 
     async def verify_api_key(self, request: Request) -> bool:
         """Verify API key from header or query parameter."""
+        # Refresh config to pick up runtime changes
+        self._load_config()
+
         if not self.api_key:
             return True  # No API key required
 
@@ -200,7 +216,8 @@ class SecureSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=200)
     limit: int = Field(default=10, ge=1, le=100)
 
-    @validator("query")
+    @field_validator("query")
+    @classmethod
     def validate_query(cls, v):
         return InputValidator.validate_search_query(v)
 
@@ -212,13 +229,15 @@ class SecureBusinessSearchRequest(BaseModel):
     business_type: str = Field(default="", max_length=50)
     limit: int = Field(default=10, ge=1, le=100)
 
-    @validator("query")
+    @field_validator("query")
+    @classmethod
     def validate_query(cls, v):
         if v:
             return InputValidator.validate_search_query(v)
         return v
 
-    @validator("business_type")
+    @field_validator("business_type")
+    @classmethod
     def validate_business_type(cls, v):
         if v:
             allowed_types = {
