@@ -540,7 +540,7 @@ if __name__ == "__main__":
 
     # Run with uvicorn
     uvicorn.run(
-        "simple_secure_server:app",
+        "server:app",
         host=host,
         port=port,
         log_level=log_level,

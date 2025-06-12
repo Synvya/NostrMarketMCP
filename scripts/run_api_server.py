@@ -50,7 +50,7 @@ def main():
 
     # Run the server with import string for reload to work
     uvicorn.run(
-        "api.simple_secure_server:app",
+        "api.server:app",
         host="127.0.0.1",
         port=8080,
         reload=True,  # Auto-reload on code changes
