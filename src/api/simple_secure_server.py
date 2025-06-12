@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).parent.parent))  # Add src/ to path
 from ..core import Database
 from ..core.shared_database import get_shared_database
-from .security_simple import (
+from .security import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
     InputValidator,
@@ -126,7 +126,7 @@ async def get_authenticated_user(
 ):
     """Verify authentication credentials."""
     # Get fresh config to check what's actually configured
-    from .security_simple import get_security_config
+    from .security import get_security_config
 
     current_config = get_security_config()
 
@@ -180,7 +180,7 @@ async def get_database() -> Database:
 # Dynamic dependency helper
 def get_auth_dependencies():
     """Get authentication dependencies based on current config."""
-    from .security_simple import get_security_config
+    from .security import get_security_config
 
     current_config = get_security_config()
     if current_config["API_KEY"] or current_config["BEARER_TOKEN"]:

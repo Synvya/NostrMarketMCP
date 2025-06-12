@@ -28,11 +28,9 @@ os.environ.update(
         "NOSTR_RELAYS": "wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social,wss://nostr.wine,wss://relay.nostr.band",
         # Logging
         "LOG_LEVEL": "debug",
-        "ENABLE_ACCESS_LOGS": "true",
         # Server
         "HOST": "127.0.0.1",
         "PORT": "8080",
-        "WORKERS": "1",
     }
 )
 
