@@ -18,7 +18,6 @@ mcp
 synvya-sdk
 
 # Security and rate limiting
-python-multipart
 
 # Environment and configuration management
 python-dotenv
