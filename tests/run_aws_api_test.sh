@@ -21,7 +21,8 @@ if [ -z "$API_KEY" ]; then
 fi
 
 # Set your API endpoint
-API_URL="http://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com"
+# API_URL="http://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com"
+API_URL="https://api.synvya.com"
 
 echo "Testing AWS API at: $API_URL"
 echo "Using API Key: ${API_KEY:0:8}..." # Show only first 8 characters for security
@@ -50,7 +51,7 @@ echo "4. Testing business profile search..."
 curl -X POST $API_URL/api/search_by_business_type \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"query": "retail", "business_type": "retail", "limit": 5}' | jq .
+  -d '{"query": "software", "business_type": "retail", "limit": 5}' | jq .
 echo -e "\n"
 
 # 5. Refresh database

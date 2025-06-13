@@ -4,16 +4,14 @@ info:
   description: Production-ready API for searching Nostr profile data with authentication
   version: 1.0.0
 servers:
-  - url: https://yourdomain.com
-    description: Production server (update with your actual domain)
-  - url: http://localhost:8080
-    description: Local development server
+  - url: http://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com
+    description: Production server
 paths:
-  /api/search_profiles:
+  /api/search:
     post:
       operationId: searchProfiles
       summary: Search Nostr profiles by content
-      description: Search for Nostr profiles by content including name, about, nip05, and other metadata fields
+      description: Search for Nostr profiles by content including name, about, nip05, location, hashtags, and other metadata fields
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -27,8 +25,9 @@ paths:
               properties:
                 query:
                   type: string
-                  description: The search term to look for in profile content
+                  description: The search term to look for in profile content, location, or hashtags
                   example: "bitcoin developer"
+                  minLength: 1
                 limit:
                   type: integer
                   description: Maximum number of results to return
@@ -49,11 +48,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/search_business_profiles:
+  /api/search_by_business_type:
     post:
       operationId: searchBusinessProfiles
-      summary: Search business Nostr profiles
-      description: Search for business Nostr profiles with specific business type tags (L/business.type)
+      summary: Search business Nostr profiles by type
+      description: Search for business Nostr profiles filtered by specific business type. Business type is mandatory.
       security:
         - ApiKeyAuth: []
       requestBody:
@@ -62,17 +61,19 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - business_type
               properties:
                 query:
                   type: string
-                  description: Optional search term for profile content
+                  description: Optional search term for profile content, location, or hashtags
                   default: ""
                   example: "coffee shop"
                 business_type:
                   type: string
-                  description: Business type filter
-                  enum: ["", "retail", "restaurant", "services", "business", "entertainment", "other"]
-                  default: ""
+                  description: Business type filter (REQUIRED)
+                  enum: ["retail", "restaurant", "service", "business", "entertainment", "gamer_dadjoke", "other"]
+                  example: "retail"
                 limit:
                   type: integer
                   description: Maximum number of results to return
