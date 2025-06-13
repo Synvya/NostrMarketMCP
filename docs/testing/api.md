@@ -20,7 +20,7 @@ cd scripts && python run_api_server.py   # listens on http://127.0.0.1:8080
 
 # ❸ Run the full pytest suite
 ```bash
-pytest tests/test_api_endpoints.py -v
+pytest tests/test_api_integration.py -v
 ```
 
 All tests should pass ✔️
@@ -71,7 +71,7 @@ Expected: HTTP 200 and JSON keys `success | stats`.
 
 | File | What it covers |
 |------|----------------|
-| `tests/test_api_endpoints.py` | Core & security endpoints |
+| `tests/test_api_integration.py` | Core & security endpoints |
 | `tests/run_tests.py` | Convenience wrapper for CI / local runs |
 | `tests/mocks/` | Mock SDK objects (no external network) |
 
@@ -101,7 +101,7 @@ CI snippet (GitHub Actions):
   run: |
     export HOST="https://api.example.com"
     export API_KEY="${{ secrets.API_KEY }}"
-    pytest tests/test_api_endpoints.py -q
+    pytest tests/test_api_integration.py -q
 ```
 
 ---

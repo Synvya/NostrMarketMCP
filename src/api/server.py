@@ -497,14 +497,20 @@ async def startup_event():
     # Initialize database
     await get_database()
 
-    # Start automatic refresh every hour
-    try:
-
-        await initialize_db()
-        logger.info("Automatic refresh enabled: profiles will be refreshed every hour")
-    except Exception as e:
-        logger.warning(f"Failed to enable automatic refresh: {e}")
-        logger.info("Manual refresh will still be available via /api/refresh")
+    # Start automatic refresh every hour (unless disabled for testing)
+    if not os.getenv("DISABLE_BACKGROUND_TASKS"):
+        try:
+            await initialize_db()
+            logger.info(
+                "Automatic refresh enabled: profiles will be refreshed every hour"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to enable automatic refresh: {e}")
+            logger.info("Manual refresh will still be available via /api/refresh")
+    else:
+        logger.info(
+            "Background tasks disabled - skipping automatic refresh initialization"
+        )
 
 
 @app.on_event("shutdown")
@@ -512,13 +518,15 @@ async def shutdown_event():
     """Clean shutdown."""
     logger.info("Shutting down Secure Nostr Profiles API")
 
-    # Stop automatic refresh
-    try:
-
-        await cleanup_db()
-        logger.info("Automatic refresh stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping automatic refresh: {e}")
+    # Stop automatic refresh (if it was started)
+    if not os.getenv("DISABLE_BACKGROUND_TASKS"):
+        try:
+            await cleanup_db()
+            logger.info("Automatic refresh stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping automatic refresh: {e}")
+    else:
+        logger.info("Background tasks were disabled - no cleanup needed")
 
     # Close database
     if db:

@@ -14,7 +14,7 @@ The NostrMarketMCP project now has a **complete testing infrastructure** coverin
 
 ```
 tests/
-├── test_api_endpoints.py        # REST API server tests (23 tests)
+├── test_api_integration.py      # REST API server tests (23 tests)
 ├── test_mcp_server.py          # MCP server unit tests (14 tests)
 ├── test_mcp_integration.py     # MCP server integration tests (12 tests) ✨ NEW
 ├── API_TESTING_GUIDE.md        # API testing guide
@@ -92,10 +92,10 @@ CI/CD Workflows:
 python run_tests.py
 
 # Specific test
-pytest tests/test_api_endpoints.py::TestAPI::test_health_endpoint -v
+pytest tests/test_api_integration.py::TestAPI::test_health_endpoint -v
 
 # With coverage
-pytest tests/test_api_endpoints.py --cov=src.api.server
+pytest tests/test_api_integration.py --cov=src.api.server
 ```
 
 ### MCP Tests  
@@ -213,7 +213,7 @@ python run_tests.py && python run_mcp_tests.py
 ### Development Testing
 ```bash
 # Test specific functionality during development
-pytest tests/test_api_endpoints.py::TestAPI::test_search_profiles -v
+pytest tests/test_api_integration.py::TestAPI::test_search_profiles -v
 pytest tests/test_mcp_server.py::TestMCPServer::test_explain_profile_tags -v
 
 # Test MCP integration ✨ NEW

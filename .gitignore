@@ -173,4 +173,4 @@ SECURITY_IMPLEMENTATION.md
 run_local.py
 test_local.py
 test_container_local.sh
-test_api_endpoints.sh
+test_api_integration.sh
