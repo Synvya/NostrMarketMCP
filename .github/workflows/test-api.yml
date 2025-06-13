@@ -41,6 +41,7 @@ jobs:
       run: |
         echo "API_KEY=test_api_key_ci" >> $GITHUB_ENV
         echo "ENVIRONMENT=test" >> $GITHUB_ENV
+        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
 
     - name: Run all tests (including API tests with automatic server management)
       run: |
