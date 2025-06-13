@@ -254,7 +254,7 @@ async def health_check():
 
 
 @app.post(
-    "/api/search_profiles",
+    "/api/search",
     response_model=SearchResponse,
     summary="Search Profiles",
     dependencies=[Depends(get_authenticated_user)],
@@ -303,7 +303,7 @@ async def search_profiles(
 
 
 @app.post(
-    "/api/search_business_profiles",
+    "/api/search_by_business_type",
     response_model=SearchResponse,
     summary="Search Business Profiles",
     dependencies=get_auth_dependencies(),
@@ -319,7 +319,7 @@ async def search_business_profiles(
 
         profiles = await database.search_business_profiles(
             request.query if request.query else "",
-            request.business_type if request.business_type else None,
+            request.business_type,
         )
         limited_profiles = profiles[: request.limit]
 

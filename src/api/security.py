@@ -226,7 +226,7 @@ class SecureBusinessSearchRequest(BaseModel):
     """Secure business search request model."""
 
     query: str = Field(default="", max_length=200)
-    business_type: str = Field(default="", max_length=50)
+    business_type: str = Field(..., min_length=1, max_length=50)
     limit: int = Field(default=10, ge=1, le=100)
 
     @field_validator("query")
@@ -239,19 +239,19 @@ class SecureBusinessSearchRequest(BaseModel):
     @field_validator("business_type")
     @classmethod
     def validate_business_type(cls, v):
-        if v:
-            allowed_types = {
-                "retail",
-                "restaurant",
-                "services",
-                "business",
-                "entertainment",
-                "other",
-            }
-            if v not in allowed_types:
-                raise ValueError(
-                    f"Business type must be one of: {', '.join(allowed_types)}"
-                )
+        allowed_types = {
+            "retail",
+            "restaurant",
+            "service",
+            "business",
+            "entertainment",
+            "gamer_dadjoke",
+            "other",
+        }
+        if v not in allowed_types:
+            raise ValueError(
+                f"Business type must be one of: {', '.join(sorted(allowed_types))}"
+            )
         return v
 
 

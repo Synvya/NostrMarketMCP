@@ -591,11 +591,30 @@ class Database:
                         about = str(profile_data.get("about", "")).lower()
                         nip05 = str(profile_data.get("nip05", "")).lower()
 
+                        # Search in location and address fields
+                        country = str(profile_data.get("country", "")).lower()
+                        city = str(profile_data.get("city", "")).lower()
+                        state = str(profile_data.get("state", "")).lower()
+                        zip_code = str(profile_data.get("zip_code", "")).lower()
+                        street = str(profile_data.get("street", "")).lower()
+
+                        # Search in hashtags (convert array to searchable string)
+                        hashtags = profile_data.get("hashtags", [])
+                        hashtags_text = " ".join(
+                            str(tag).lower() for tag in hashtags if tag
+                        )
+
                         if (
                             query in name
                             or query in display_name
                             or query in about
                             or query in nip05
+                            or query in country
+                            or query in city
+                            or query in state
+                            or query in zip_code
+                            or query in street
+                            or query in hashtags_text
                         ):
                             # Extract business_type from tags if present
                             business_type = None
@@ -818,12 +837,36 @@ class Database:
                             ).lower()
                             about = str(profile_data.get("about", "")).lower()
                             nip05 = str(profile_data.get("nip05", "")).lower()
+                            # Also search in business_type field
+                            business_type_text = str(
+                                profile_business_type or ""
+                            ).lower()
+
+                            # Search in location and address fields
+                            country = str(profile_data.get("country", "")).lower()
+                            city = str(profile_data.get("city", "")).lower()
+                            state = str(profile_data.get("state", "")).lower()
+                            zip_code = str(profile_data.get("zip_code", "")).lower()
+                            street = str(profile_data.get("street", "")).lower()
+
+                            # Search in hashtags (convert array to searchable string)
+                            hashtags = profile_data.get("hashtags", [])
+                            hashtags_text = " ".join(
+                                str(tag).lower() for tag in hashtags if tag
+                            )
 
                             if not (
                                 query in name
                                 or query in display_name
                                 or query in about
                                 or query in nip05
+                                or query in business_type_text
+                                or query in country
+                                or query in city
+                                or query in state
+                                or query in zip_code
+                                or query in street
+                                or query in hashtags_text
                             ):
                                 continue
 

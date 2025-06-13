@@ -76,7 +76,7 @@ class TestLiveAPIEndpoints:
         try:
             payload = {"query": "test", "limit": 5}
             response = httpx.post(
-                f"{self.base_url}/api/search_profiles",
+                f"{self.base_url}/api/search",
                 headers=self.headers,
                 json=payload,
                 timeout=10.0,

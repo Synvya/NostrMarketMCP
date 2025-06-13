@@ -81,6 +81,7 @@ def start_api_server():
             "API_KEY": "test_api_key_integration",
             "PORT": "8080",
             "HOST": "127.0.0.1",
+            "LOG_LEVEL": "info",  # Ensure lowercase for uvicorn
             "DISABLE_BACKGROUND_TASKS": "true",  # Disable background tasks for testing
         }
     )
