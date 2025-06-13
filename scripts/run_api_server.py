@@ -32,7 +32,7 @@ default_env = {
     "RATE_LIMIT_REQUESTS": "1000",
     "RATE_LIMIT_WINDOW": "60",
     # Database - local file
-    "DATABASE_PATH": "./local_test.db",
+    "DATABASE_PATH": str(project_root / "local_test.db"),
     # Nostr relays
     "NOSTR_RELAYS": "wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social,wss://nostr.wine,wss://relay.nostr.band",
     # Logging

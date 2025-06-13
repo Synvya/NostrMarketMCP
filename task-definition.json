@@ -56,6 +56,10 @@
                 {
                     "name": "BEARER_TOKEN",
                     "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:BEARER_TOKEN::"
+                },
+                {
+                    "name": "NOSTR_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:NOSTR_KEY::"
                 }
             ],
             "logConfiguration": {
