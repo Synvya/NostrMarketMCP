@@ -6,6 +6,7 @@ Provides a thin wrapper for SQLite with helpers for event storage and resource q
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -570,6 +571,11 @@ class Database:
             # Convert query to lowercase for case-insensitive search
             query = query.lower()
 
+            # Split query into individual terms (handle commas, spaces, etc.)
+            query_terms = [
+                term.strip() for term in re.split(r"[,\s]+", query) if term.strip()
+            ]
+
             sql = """
             SELECT pubkey, content, tags FROM events
             WHERE kind = 0
@@ -603,18 +609,38 @@ class Database:
                             str(tag).lower() for tag in hashtags if tag
                         )
 
-                        if (
-                            query in name
-                            or query in display_name
-                            or query in about
-                            or query in nip05
-                            or query in country
-                            or query in city
-                            or query in state
-                            or query in zip_code
-                            or query in street
-                            or query in hashtags_text
-                        ):
+                        # Also search in Nostr event tags (specifically "t" tags for hashtags)
+                        event_hashtags = []
+                        for tag in tags:
+                            if len(tag) >= 2 and tag[0] == "t":
+                                event_hashtags.append(str(tag[1]).lower())
+                        event_hashtags_text = " ".join(event_hashtags)
+
+                        # Create searchable text by combining all fields
+                        searchable_text = " ".join(
+                            [
+                                name,
+                                display_name,
+                                about,
+                                nip05,
+                                country,
+                                city,
+                                state,
+                                zip_code,
+                                street,
+                                hashtags_text,
+                                event_hashtags_text,
+                            ]
+                        )
+
+                        # Check if ANY query term matches the searchable text
+                        match_found = False
+                        for term in query_terms:
+                            if term in searchable_text:
+                                match_found = True
+                                break
+
+                        if match_found:
                             # Extract business_type from tags if present
                             business_type = None
                             for tag in tags:

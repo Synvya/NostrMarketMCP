@@ -43,7 +43,7 @@ echo "3. Testing profile search..."
 curl -X POST $API_URL/api/search \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"query": "test", "limit": 5}' | jq .
+  -d '{"query": "bookkeeping, bookkeeper", "limit": 5}' | jq .
 echo -e "\n"
 
 # 4. Search business profiles
@@ -62,6 +62,11 @@ echo -e "\n"
 # 6. Get business types
 echo "6. Testing business types endpoint..."
 curl -X GET $API_URL/api/business_types -H "X-API-Key: $API_KEY" | jq .
+echo -e "\n"
+
+# 7. Get specific profile
+echo "7. Testing specific profile..." 
+curl -X GET $API_URL/api/profile/38267cf358b0b2fe41dfbbc491f288b8df1ed0291dce5862e4a209df96078ab8 -H "X-API-Key: $API_KEY" | jq .
 echo -e "\n"
 
 echo "All tests completed!"
