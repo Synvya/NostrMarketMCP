@@ -72,7 +72,7 @@ paths:
                 business_type:
                   type: string
                   description: Business type filter (REQUIRED)
-                  enum: ["retail", "restaurant", "service", "business", "entertainment", "gamer_dadjoke", "other"]
+                  enum: ["retail", "restaurant", "service", "business", "entertainment", "other"]
                   example: "retail"
                 limit:
                   type: integer
@@ -318,7 +318,7 @@ components:
           type: array
           items:
             type: string
-          example: ["retail", "restaurant", "services", "business", "entertainment", "other"]
+          example: ["retail", "restaurant", "service", "business", "entertainment", "other"]
         description:
           type: string
           example: "Available values for business_type parameter in search_business_profiles"

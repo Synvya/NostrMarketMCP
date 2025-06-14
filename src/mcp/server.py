@@ -669,7 +669,7 @@ async def refresh_database():
 
     # Get the shared database instance
     db = await get_shared_database()
-    profiles: set[Profile]
+    all_profiles: set[Profile] = set()
 
     try:
         logger.info("Refreshing database with new Nostr profile data...")
@@ -686,26 +686,47 @@ async def refresh_database():
                 logger.error(f"Failed to create NostrClient: {e}")
                 raise
 
+        # Define all business types to search for
+        business_types = [
+            ProfileType.RETAIL,
+            ProfileType.RESTAURANT,
+            ProfileType.SERVICE,
+            ProfileType.BUSINESS,
+            ProfileType.ENTERTAINMENT,
+            ProfileType.OTHER,
+        ]
+
         try:
-            profile_filter = ProfileFilter(
-                namespace=Namespace.BUSINESS_TYPE,
-                profile_type=ProfileType.RETAIL,
+            # Search for profiles with each business type
+            for business_type in business_types:
+                logger.debug(f"Searching for {business_type.value} profiles...")
+                profile_filter = ProfileFilter(
+                    namespace=Namespace.BUSINESS_TYPE,
+                    profile_type=business_type,
+                )
+                profiles = await nostr_client.async_get_merchants(profile_filter)
+                if profiles is not None:
+                    all_profiles.update(profiles)
+                    logger.debug(
+                        f"Found {len(profiles)} {business_type.value} profiles"
+                    )
+                    for profile in profiles:
+                        logger.debug(f"Profile: {profile.to_json()}")
+
+            logger.info(
+                f"Total unique profiles found across all business types: {len(all_profiles)}"
             )
-            profiles = await nostr_client.async_get_merchants(profile_filter)
-            if profiles is not None:
-                for profile in profiles:
-                    logger.debug(f"Profile: {profile.to_json()}")
 
         except Exception as e:
             logger.error("Failed to get merchants: %s", e)
             raise
 
         # Store the profiles in the database
-        logger.debug(f"Found {len(profiles)} business profiles to store")
+        logger.debug(f"Found {len(all_profiles)} business profiles to store")
         profile_count = 0
 
         # Update database with profile information
-        for profile in profiles:
+        for profile in all_profiles:
             try:
                 # Use the Profile's built-in to_dict() method which handles set serialization
                 profile_data = profile.to_dict()

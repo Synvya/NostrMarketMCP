@@ -116,7 +116,7 @@ async def inspect_database():
                             in [
                                 "retail",
                                 "restaurant",
-                                "services",
+                                "service",
                                 "business",
                                 "entertainment",
                                 "other",

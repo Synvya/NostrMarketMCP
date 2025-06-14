@@ -245,7 +245,6 @@ class SecureBusinessSearchRequest(BaseModel):
             "service",
             "business",
             "entertainment",
-            "gamer_dadjoke",
             "other",
         }
         if v not in allowed_types:

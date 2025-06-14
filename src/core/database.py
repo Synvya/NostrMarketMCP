@@ -253,7 +253,6 @@ class Database:
                                     "service",  # ProfileType.SERVICE
                                     "business",  # ProfileType.BUSINESS
                                     "entertainment",  # ProfileType.ENTERTAINMENT
-                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
                                     "other",  # ProfileType.OTHER
                                 ]
                             ):
@@ -629,7 +628,6 @@ class Database:
                                         "service",  # ProfileType.SERVICE
                                         "business",  # ProfileType.BUSINESS
                                         "entertainment",  # ProfileType.ENTERTAINMENT
-                                        "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
                                         "other",  # ProfileType.OTHER
                                     ]
                                 ):
@@ -696,7 +694,6 @@ class Database:
                                     "service",  # ProfileType.SERVICE
                                     "business",  # ProfileType.BUSINESS
                                     "entertainment",  # ProfileType.ENTERTAINMENT
-                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
                                     "other",  # ProfileType.OTHER
                                 ]
                             ):
@@ -816,7 +813,6 @@ class Database:
                                     "service",  # ProfileType.SERVICE
                                     "business",  # ProfileType.BUSINESS
                                     "entertainment",  # ProfileType.ENTERTAINMENT
-                                    "gamer_dadjoke",  # ProfileType.GAMER_DADJOKE
                                     "other",  # ProfileType.OTHER
                                 ]:
                                     profile_business_type = tag[1]
@@ -995,7 +991,6 @@ class Database:
             "service",
             "business",
             "entertainment",
-            "gamer_dadjoke",
             "other",
         ]
 
