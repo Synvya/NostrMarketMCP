@@ -1,0 +1,11 @@
+name: Deploy API Server to AWS ECS
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  deploy:
+    name: Build and Deploy Container
+    runs-on: ubuntu-latest      

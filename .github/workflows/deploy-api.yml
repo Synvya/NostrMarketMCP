@@ -1,4 +1,4 @@
-name: Deploy to ECS (nostr-profiles-api)
+name: Deploy API Server to AWS ECS
 
 on:
   push:

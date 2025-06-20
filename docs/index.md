@@ -31,8 +31,8 @@ Test Runners:
 CI/CD Workflows:
 ├── .github/workflows/test-api.yml             # API-only CI/CD
 ├── .github/workflows/test-mcp.yml             # MCP-only CI/CD
-├── .github/workflows/comprehensive-tests.yml  # Complete CI/CD pipeline (API + MCP)
-└── .github/workflows/deploy-api.yml          # API Deployment workflow
+├── .github/workflows/deploy-api.yml           # API deployment workflow
+└── .github/workflows/deploy-mcp.yml           # MCP deployment workflow
 ```
 
 ## 🏗️ Test Coverage Summary
@@ -130,8 +130,7 @@ pytest tests/ -v
 
 ## 🔄 CI/CD Pipeline
 
-### Comprehensive Workflow
-Our `.github/workflows/comprehensive-tests.yml` provides:
+
 
 **📊 Multi-Matrix Testing**
 - Python 3.11 and 3.12 support
