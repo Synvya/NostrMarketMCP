@@ -32,7 +32,7 @@ CI/CD Workflows:
 ├── .github/workflows/test-api.yml             # API-only CI/CD
 ├── .github/workflows/test-mcp.yml             # MCP-only CI/CD
 ├── .github/workflows/comprehensive-tests.yml  # Complete CI/CD pipeline (API + MCP)
-└── .github/workflows/deploy.yml              # Deployment workflow
+└── .github/workflows/deploy-api.yml          # API Deployment workflow
 ```
 
 ## 🏗️ Test Coverage Summary

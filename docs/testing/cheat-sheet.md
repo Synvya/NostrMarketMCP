@@ -15,8 +15,8 @@ When you’re wondering **“is the server up and doing what it should?”** run
 Set either `API_KEY` **or** `BEARER`—not both.
 
 ```bash
-# one‑liner for local Docker compose
-docker compose up -d nostr_api && sleep 3
+# one‑liner for local Docker compose (API server)
+docker compose -f docker-compose-api.yml up -d nostr_api && sleep 3
 ```
 
 ---

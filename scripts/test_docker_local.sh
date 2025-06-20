@@ -50,7 +50,7 @@ check_env_file() {
 
 build_image() {
     log_info "Building Docker image (same as ECS deployment)..."
-    docker build -t "$IMAGE_NAME" .
+    docker build -f Dockerfile-api -t "$IMAGE_NAME" .
     log_info "Build completed successfully!"
 }
 
