@@ -165,7 +165,7 @@ ssl/
 certs/
 
 # Internal documentation files (not for public sync)
-SECURITY_IMPLEMENTATION.md
+docs/internal/
 
 
 

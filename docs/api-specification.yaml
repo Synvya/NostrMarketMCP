@@ -1,0 +1,520 @@
+openapi: 3.0.3
+info:
+  title: Synvya API
+  description: |
+    Production-ready API for searching and retrieving business data.
+    
+    The Synvya API provides secure access to a curated database of business information.
+    The API is designed for AI agents to easily find businesses, products, and services
+    and in the future place orders directly with these businesses. 
+    
+    ## Authentication
+    
+    The API supports two authentication methods:
+    - **API Key**: Send `X-API-Key` header with your API key
+    - **Bearer Token**: Send `Authorization: Bearer <token>` header
+    
+    ## Rate Limiting
+    
+    - Default: 100 requests per minute per IP
+    - Returns HTTP 429 when limit exceeded
+    - Check `X-Rate-Limit-Remaining` header for remaining requests
+    
+    ## CORS
+    
+    The API supports CORS and is configured for OpenAI Custom GPT integration.
+  version: 1.0.0
+  contact:
+    name: API Support
+    url: https://github.com/your-org/NostrMarketMCP
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.example.com
+    description: Production server
+  - url: http://localhost:8080
+    description: Local development server
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Check if the API server is running and healthy
+      operationId: healthCheck
+      security: []  # No authentication required
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  service:
+                    type: string
+                    example: "nostr-profiles-api"
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /api/search:
+    post:
+      summary: Search for Products and Services
+      description: Search for products and services by name, description, or tags
+      operationId: searchProductsAndServices
+      tags:
+        - Search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            examples:
+              basic_search:
+                summary: Basic profile search
+                value:
+                  query: "bitcoin"
+                  limit: 10
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/search_by_business_type:
+    post:
+      summary: Search Business Profiles
+      description: Search for business profiles by name or type
+      operationId: searchBusinessProfiles
+      tags:
+        - Search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessSearchRequest'
+      responses:
+        '200':
+          description: Business search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/profile/{pubkey}:
+    get:
+      summary: Get Business Profile by Public Key
+      description: Retrieve a specific business profile using its public key (hex format)
+      operationId: getBusinessProfileByPubkey
+      tags:
+        - Profiles
+      parameters:
+        - name: pubkey
+          in: path
+          required: true
+          description: Nostr public key in hex format (64 characters)
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{64}$'
+          example: "57d03534460df449321cde3757b1b379a8377bace8199101df0716e20dbb7991"
+      responses:
+        '200':
+          description: Profile found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  profile:
+                    $ref: '#/components/schemas/Profile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/stats:
+    get:
+      summary: Get Database Statistics
+      description: Retrieve statistics about the profile database
+      operationId: getProfileStats
+      tags:
+        - Statistics
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/business_types:
+    get:
+      summary: Get Available Business Types
+      description: Retrieve the list of available business type filters
+      operationId: getBusinessTypes
+      tags:
+        - Statistics
+      responses:
+        '200':
+          description: Business types retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  business_types:
+                    type: array
+                    items:
+                      type: string
+                    example: ["retail", "restaurant", "service", "business", "entertainment"]
+                  count:
+                    type: integer
+                    example: 5
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/refresh:
+    post:
+      summary: Refresh Database
+      description: Manually trigger a refresh of the database from Nostr relays
+      operationId: refreshDatabase
+      tags:
+        - Administration
+      responses:
+        '200':
+          description: Database refresh completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token for authentication
+
+  schemas:
+    Profile:
+      type: object
+      description: A Nostr profile with business information
+      required:
+        - pubkey
+      properties:
+        pubkey:
+          type: string
+          description: Public key of the profile (hex format)
+          pattern: '^[0-9a-fA-F]{64}$'
+          example: "57d03534460df449321cde3757b1b379a8377bace8199101df0716e20dbb7991"
+        name:
+          type: string
+          description: Display name
+          maxLength: 100
+          example: "Alice"
+        display_name:
+          type: string
+          description: Alternative display name
+          maxLength: 100
+          example: "Alice Cooper"
+        about:
+          type: string
+          description: Profile description/bio
+          maxLength: 1000
+          example: "Bitcoin developer and coffee enthusiast"
+        picture:
+          type: string
+          format: uri
+          description: Profile picture URL
+          example: "https://example.com/avatar.jpg"
+        banner:
+          type: string
+          format: uri
+          description: Profile banner URL
+          example: "https://example.com/banner.jpg"
+        nip05:
+          type: string
+          description: NIP-05 verification identifier
+          example: "alice@example.com"
+        website:
+          type: string
+          format: uri
+          description: Website URL
+          example: "https://alice.example.com"
+        lud06:
+          type: string
+          description: Lightning address (LNURL format)
+          example: "lnurl1dp68gurn8ghj7..."
+        lud16:
+          type: string
+          description: Lightning address (email format)
+          example: "alice@getalby.com"
+        business_type:
+          type: string
+          description: Business type if applicable
+          enum: ["retail", "restaurant", "service", "business", "entertainment", "other"]
+          example: "restaurant"
+        tags:
+          type: array
+          description: Nostr event tags
+          items:
+            type: array
+            items:
+              type: string
+          example: [["L", "business.type"], ["l", "restaurant", "business.type"]]
+        created_at:
+          type: integer
+          description: Profile creation timestamp (Unix timestamp)
+          example: 1699123456
+        last_updated:
+          type: integer
+          description: Last update timestamp (Unix timestamp)
+          example: 1699123456
+      additionalProperties: true
+
+    SearchRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Search query string
+          minLength: 1
+          maxLength: 200
+          example: "bitcoin developer"
+        limit:
+          type: integer
+          description: Maximum number of results to return
+          minimum: 1
+          maximum: 100
+          default: 10
+          example: 10
+
+    BusinessSearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search query string (optional)
+          maxLength: 200
+          example: "coffee shop"
+        business_type:
+          type: string
+          description: Filter by business type
+          enum: ["retail", "restaurant", "service", "business", "entertainment", "other"]
+          example: "restaurant"
+        limit:
+          type: integer
+          description: Maximum number of results to return
+          minimum: 1
+          maximum: 100
+          default: 10
+          example: 10
+
+    SearchResponse:
+      type: object
+      required:
+        - success
+        - count
+        - profiles
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+          example: true
+        count:
+          type: integer
+          description: Number of profiles returned
+          example: 5
+        profiles:
+          type: array
+          description: List of matching profiles
+          items:
+            $ref: '#/components/schemas/Profile'
+        query:
+          type: string
+          description: Search query that was used
+          example: "bitcoin"
+
+    StatsResponse:
+      type: object
+      required:
+        - success
+        - stats
+      properties:
+        success:
+          type: boolean
+          example: true
+        stats:
+          type: object
+          description: Database statistics
+          properties:
+            total_profiles:
+              type: integer
+              description: Total number of profiles in database
+              example: 1234
+            business_profiles:
+              type: integer
+              description: Number of business profiles
+              example: 567
+            last_refresh:
+              type: string
+              format: date-time
+              description: Last database refresh timestamp
+              example: "2023-11-01T12:00:00Z"
+            refresh_interval:
+              type: integer
+              description: Automatic refresh interval in seconds
+              example: 3600
+          additionalProperties: true
+
+    RefreshResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          description: Refresh status message
+          example: "Database refresh completed successfully"
+        current_stats:
+          type: object
+          description: Current database statistics after refresh
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Invalid request format"
+        details:
+          type: string
+          description: Additional error details
+          example: "The query parameter is required and cannot be empty"
+        code:
+          type: string
+          description: Error code for programmatic handling
+          example: "INVALID_QUERY"
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+tags:
+  - name: Health
+    description: Server health and status
+  - name: Search
+    description: Profile search operations
+  - name: Profiles
+    description: Individual profile operations
+  - name: Statistics
+    description: Database statistics and metrics
+  - name: Administration
+    description: Administrative operations 
