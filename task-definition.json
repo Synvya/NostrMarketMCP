@@ -60,6 +60,10 @@
                 {
                     "name": "NOSTR_KEY",
                     "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:NOSTR_KEY::"
+                },
+                {
+                    "name": "OPENAI_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:OPENAI_API_KEY::"
                 }
             ],
             "logConfiguration": {

@@ -40,14 +40,7 @@ jobs:
       - name: Logout from Docker
         run: docker logout
       
-      - name: Download ECS task definition
-        run: |
-          aws ecs describe-task-definition \
-            --task-definition ${{ secrets.TASK_FAMILY }} \
-            --query taskDefinition \
-            --output json > task-def.json
-
-      - name: Update task-definition.json with new image URI
+      - name: Update task definition with new image URI
         run: |
           IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           jq --arg IMAGE_URI "$IMAGE_URI" --arg CONTAINER_NAME "${{ secrets.CONTAINER_NAME }}" \
@@ -70,3 +63,15 @@ jobs:
             --service ${{ secrets.ECS_SERVICE }} \
             --task-definition ${{ steps.register-task.outputs.task_def_arn }} \
             --force-new-deployment
+
+      - name: Wait for deployment to complete
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.ECS_CLUSTER }} \
+            --services ${{ secrets.ECS_SERVICE }}
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment completed successfully!"
+          echo "New task definition: ${{ steps.register-task.outputs.task_def_arn }}"
+          echo "Image deployed: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
