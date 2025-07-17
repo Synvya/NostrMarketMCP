@@ -26,6 +26,7 @@ def get_security_config():
     return {
         "API_KEY": os.getenv("API_KEY", ""),
         "BEARER_TOKEN": os.getenv("BEARER_TOKEN", ""),
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
         "ALLOWED_ORIGINS": (
             os.getenv("ALLOWED_ORIGINS", "").split(",")
             if os.getenv("ALLOWED_ORIGINS")
@@ -60,6 +61,7 @@ class AuthenticationScheme:
         config = get_security_config()
         self.api_key = config["API_KEY"]
         self.bearer_token = config["BEARER_TOKEN"]
+        self.openai_api_key = config["OPENAI_API_KEY"]
 
         # Validate configuration in production
         if config["ENVIRONMENT"] == "production":
@@ -114,6 +116,35 @@ class AuthenticationScheme:
             raise SecurityError(status_code=401, detail="Invalid bearer token")
 
         return True
+
+    async def verify_chat_authentication(self, request: Request) -> tuple[bool, str]:
+        """Verify both API key and OpenAI key for chat endpoint."""
+        # Refresh config to pick up runtime changes
+        self._load_config()
+
+        # Check API key
+        if not self.api_key:
+            raise SecurityError(
+                status_code=401, detail="API key required for chat endpoint"
+            )
+
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            # Check query parameter as fallback
+            api_key = request.query_params.get("api_key")
+
+        if not api_key:
+            raise SecurityError(status_code=401, detail="API key required")
+
+        # Constant time comparison to prevent timing attacks
+        if not hmac.compare_digest(api_key, self.api_key):
+            raise SecurityError(status_code=401, detail="Invalid API key")
+
+        # Check OpenAI key
+        if not self.openai_api_key:
+            raise SecurityError(status_code=500, detail="OpenAI API key not configured")
+
+        return True, self.openai_api_key
 
 
 # Global authentication instance
@@ -331,6 +362,69 @@ class SecurityMiddleware:
 
 # Global security middleware instance
 security_middleware = SecurityMiddleware()
+
+
+# Chat request models
+class ChatMessage(BaseModel):
+    """Chat message model."""
+
+    role: str = Field(
+        ..., description="Role of the message sender (user, assistant, system)"
+    )
+    content: str = Field(..., description="Content of the message")
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v):
+        if v not in ["user", "assistant", "system"]:
+            raise ValueError("Role must be 'user', 'assistant', or 'system'")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError("Message content cannot be empty")
+        if len(v) > 10000:
+            raise ValueError("Message content too long (max 10000 characters)")
+        return v.strip()
+
+
+class SecureChatRequest(BaseModel):
+    """Secure chat request model."""
+
+    messages: List[ChatMessage] = Field(..., description="List of chat messages")
+    stream: bool = Field(default=True, description="Whether to stream the response")
+    max_tokens: Optional[int] = Field(
+        default=1000, description="Maximum tokens to generate"
+    )
+    temperature: Optional[float] = Field(
+        default=0.7, description="Sampling temperature"
+    )
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v):
+        if not v:
+            raise ValueError("At least one message is required")
+        if len(v) > 50:
+            raise ValueError("Too many messages (max 50)")
+        return v
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, v):
+        if v is not None and (v < 1 or v > 4000):
+            raise ValueError("max_tokens must be between 1 and 4000")
+        return v
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v):
+        if v is not None and (v < 0 or v > 2):
+            raise ValueError("temperature must be between 0 and 2")
+        return v
+
 
 # Security headers
 SECURITY_HEADERS = {

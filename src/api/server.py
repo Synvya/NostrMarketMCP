@@ -14,9 +14,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import openai
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -27,8 +29,10 @@ from src.mcp.server import cleanup_db, initialize_db, refresh_database
 from .security import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
+    ChatMessage,
     InputValidator,
     SecureBusinessSearchRequest,
+    SecureChatRequest,
     SecureSearchRequest,
     auth,
     rate_limiter,
@@ -175,6 +179,375 @@ async def get_authenticated_user(
 async def get_database() -> Database:
     """Get shared database instance."""
     return await get_shared_database()
+
+
+# Chat authentication dependency
+async def get_chat_authenticated_user(request: Request) -> str:
+    """Verify authentication for chat endpoint and return OpenAI API key."""
+    try:
+        is_valid, openai_api_key = await auth.verify_chat_authentication(request)
+        return openai_api_key
+    except Exception as e:
+        logger.debug(f"Chat authentication failed: {e}")
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# OpenAI client helper
+def get_openai_client(api_key: str) -> openai.OpenAI:
+    """Get OpenAI client with API key."""
+    return openai.OpenAI(api_key=api_key)
+
+
+# Chat service for LLM integration
+class ChatService:
+    """Service to handle chat interactions with OpenAI and profile searches."""
+
+    def __init__(self, openai_client: openai.OpenAI, database: Database):
+        self.client = openai_client
+        self.database = database
+
+        # Define available functions for OpenAI
+        self.functions = [
+            {
+                "name": "search_profiles",
+                "description": "Search for Nostr profiles by content including names, descriptions, hashtags, and locations",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for profile content",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results (1-50)",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "search_business_profiles",
+                "description": "Search for business profiles filtered by business type",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for business content",
+                        },
+                        "business_type": {
+                            "type": "string",
+                            "enum": [
+                                "retail",
+                                "restaurant",
+                                "service",
+                                "business",
+                                "entertainment",
+                                "other",
+                            ],
+                            "description": "Business type to filter by",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results (1-50)",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                        },
+                    },
+                    "required": ["business_type"],
+                },
+            },
+            {
+                "name": "get_profile_by_pubkey",
+                "description": "Get a specific profile by its public key",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pubkey": {
+                            "type": "string",
+                            "description": "64-character hex public key",
+                        }
+                    },
+                    "required": ["pubkey"],
+                },
+            },
+            {
+                "name": "get_business_types",
+                "description": "Get list of available business types",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "get_stats",
+                "description": "Get database statistics",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ]
+
+    def _deduplicate_profiles(self, profiles: List[dict]) -> List[dict]:
+        """
+        Remove duplicate profiles, preferring production environment over demo.
+        Identifies duplicates by matching display_name, name, or website.
+        """
+        if not profiles:
+            return profiles
+
+        # Group profiles by potential duplicate keys
+        profile_groups = {}
+
+        for profile in profiles:
+            # Create a key for identifying potential duplicates
+            # Use display_name, name, or website as duplicate detection criteria
+            duplicate_key = None
+
+            if profile.get("display_name"):
+                duplicate_key = profile["display_name"].lower().strip()
+            elif profile.get("name"):
+                duplicate_key = profile["name"].lower().strip()
+            elif profile.get("website"):
+                duplicate_key = profile["website"].lower().strip()
+            else:
+                # If no identifying info, use pubkey (unique anyway)
+                duplicate_key = profile.get("pubkey", "")
+
+            if duplicate_key:
+                if duplicate_key not in profile_groups:
+                    profile_groups[duplicate_key] = []
+                profile_groups[duplicate_key].append(profile)
+
+        # For each group, prefer production over demo environment
+        deduplicated = []
+        for group in profile_groups.values():
+            if len(group) == 1:
+                deduplicated.append(group[0])
+            else:
+                # Multiple profiles found - prefer production over demo
+                production_profiles = [
+                    p for p in group if p.get("environment") == "production"
+                ]
+                demo_profiles = [p for p in group if p.get("environment") == "demo"]
+                other_profiles = [
+                    p
+                    for p in group
+                    if p.get("environment") not in ["production", "demo"]
+                ]
+
+                if production_profiles:
+                    # Use first production profile
+                    deduplicated.append(production_profiles[0])
+                elif other_profiles:
+                    # Use first non-demo profile if no production
+                    deduplicated.append(other_profiles[0])
+                elif demo_profiles:
+                    # Only use demo if that's all we have
+                    deduplicated.append(demo_profiles[0])
+                else:
+                    # Fallback to first profile
+                    deduplicated.append(group[0])
+
+        return deduplicated
+
+    async def call_function(self, function_name: str, arguments: dict) -> dict:
+        """Execute a function call and return results."""
+        try:
+            if function_name == "search_profiles":
+                query = arguments.get("query", "")
+                limit = arguments.get("limit", 10)
+                profiles = await self.database.search_profiles(query)
+                # Apply deduplication before limiting results
+                deduplicated_profiles = self._deduplicate_profiles(profiles)
+                limited_profiles = deduplicated_profiles[:limit]
+                return {
+                    "success": True,
+                    "count": len(limited_profiles),
+                    "profiles": limited_profiles,
+                    "query": query,
+                }
+
+            elif function_name == "search_business_profiles":
+                query = arguments.get("query", "")
+                business_type = arguments.get("business_type")
+                limit = arguments.get("limit", 10)
+                profiles = await self.database.search_business_profiles(
+                    query, business_type
+                )
+                # Apply deduplication before limiting results
+                deduplicated_profiles = self._deduplicate_profiles(profiles)
+                limited_profiles = deduplicated_profiles[:limit]
+                return {
+                    "success": True,
+                    "count": len(limited_profiles),
+                    "profiles": limited_profiles,
+                    "query": query,
+                    "business_type": business_type,
+                }
+
+            elif function_name == "get_profile_by_pubkey":
+                pubkey = arguments.get("pubkey")
+                validated_pubkey = InputValidator.validate_pubkey(pubkey)
+                resource_uri = f"nostr://{validated_pubkey}/profile"
+                profile = await self.database.get_resource_data(resource_uri)
+                if profile:
+                    profile["pubkey"] = validated_pubkey
+                    return {"success": True, "profile": profile}
+                else:
+                    return {"success": False, "error": "Profile not found"}
+
+            elif function_name == "get_business_types":
+                business_types = await self.database.get_business_types()
+                return {
+                    "success": True,
+                    "business_types": business_types,
+                    "count": len(business_types),
+                }
+
+            elif function_name == "get_stats":
+                stats = await self.database.get_profile_stats()
+                return {"success": True, "stats": stats}
+
+            else:
+                return {"success": False, "error": f"Unknown function: {function_name}"}
+
+        except Exception as e:
+            logger.error(f"Function call error for {function_name}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def chat_stream(
+        self,
+        messages: List[ChatMessage],
+        max_tokens: int = 1000,
+        temperature: float = 0.7,
+    ):
+        """Handle streaming chat with OpenAI and function calling."""
+        try:
+            # Convert messages to OpenAI format
+            openai_messages = [
+                {"role": msg.role, "content": msg.content} for msg in messages
+            ]
+
+            # Add system message if not present
+            if not openai_messages or openai_messages[0]["role"] != "system":
+                system_message = {
+                    "role": "system",
+                    "content": """You are a helpful shopping assistant. You help people find businesses, products, and services from a database that contains business information.
+
+You have access to a business directory database with comprehensive business profiles. You can:
+- Search broadly for businesses using api/search
+- Search businesses filtered by specific business type using api/search_by_business_type
+- Get detailed business information using api/profile/<public-key>
+- Get all available business categories using api/business_types
+- Get database statistics using api/stats
+- Refresh the database with latest business information using api/refresh_database
+
+When users ask about finding businesses, products, or services, use the appropriate search functions to help them. Be helpful, accurate, and provide relevant results. If search results are empty, suggest alternative search terms or broader categories.
+
+Available business types: retail, restaurant, service, business, entertainment, other
+
+Important: If you find duplicate entries for the same business, only present one of them to the user. If duplicate entries exist where one has environment="demo" and another has environment="production", always present the "production" entry and ignore the "demo" entry.""",
+                }
+                openai_messages.insert(0, system_message)
+
+            # Make initial request to OpenAI
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=openai_messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=True,
+                functions=self.functions,
+                function_call="auto",
+            )
+
+            # Process streaming response
+            function_call_buffer = {"name": "", "arguments": ""}
+            collecting_function_call = False
+
+            for chunk in response:
+                if chunk.choices[0].delta.function_call:
+                    # Handle function calling
+                    collecting_function_call = True
+                    func_call = chunk.choices[0].delta.function_call
+
+                    if func_call.name:
+                        function_call_buffer["name"] += func_call.name
+                    if func_call.arguments:
+                        function_call_buffer["arguments"] += func_call.arguments
+
+                elif (
+                    collecting_function_call
+                    and chunk.choices[0].finish_reason == "function_call"
+                ):
+                    # Execute function call
+                    try:
+                        function_name = function_call_buffer["name"]
+                        arguments = json.loads(function_call_buffer["arguments"])
+
+                        logger.info(
+                            f"Executing function: {function_name} with args: {arguments}"
+                        )
+
+                        function_result = await self.call_function(
+                            function_name, arguments
+                        )
+
+                        # Add function result to conversation and continue
+                        openai_messages.append(
+                            {
+                                "role": "assistant",
+                                "content": None,
+                                "function_call": {
+                                    "name": function_name,
+                                    "arguments": function_call_buffer["arguments"],
+                                },
+                            }
+                        )
+                        openai_messages.append(
+                            {
+                                "role": "function",
+                                "name": function_name,
+                                "content": json.dumps(function_result),
+                            }
+                        )
+
+                        # Continue conversation with function result
+                        follow_up_response = self.client.chat.completions.create(
+                            model="gpt-4",
+                            messages=openai_messages,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            stream=True,
+                        )
+
+                        for follow_chunk in follow_up_response:
+                            if follow_chunk.choices[0].delta.content:
+                                content = follow_chunk.choices[0].delta.content
+                                yield f"data: {json.dumps({'content': content})}\n\n"
+
+                    except Exception as e:
+                        logger.error(f"Function execution error: {e}")
+                        error_msg = f"Error executing search: {str(e)}"
+                        yield f"data: {json.dumps({'content': error_msg})}\n\n"
+
+                    # Reset function call buffer
+                    function_call_buffer = {"name": "", "arguments": ""}
+                    collecting_function_call = False
+
+                elif chunk.choices[0].delta.content and not collecting_function_call:
+                    # Regular content streaming
+                    content = chunk.choices[0].delta.content
+                    yield f"data: {json.dumps({'content': content})}\n\n"
+
+            # Send completion marker
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Chat stream error: {e}")
+            error_msg = f"Chat error: {str(e)}"
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
 
 
 # Dynamic dependency helper
@@ -462,6 +835,74 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
     except Exception as e:
         logger.error(f"Manual refresh error: {e}")
         raise HTTPException(status_code=500, detail="Refresh failed")
+
+
+@app.post(
+    "/api/chat",
+    summary="Chat with AI Assistant",
+    description="Stream chat responses from AI assistant with access to profile search functions",
+)
+async def chat_with_assistant(
+    request: SecureChatRequest,
+    openai_api_key: str = Depends(get_chat_authenticated_user),
+    database: Database = Depends(get_database),
+):
+    """Stream chat responses from AI assistant with profile search capabilities."""
+    try:
+        logger.info(
+            f"Chat request: {len(request.messages)} messages, stream={request.stream}"
+        )
+
+        # Create OpenAI client and chat service
+        openai_client = get_openai_client(openai_api_key)
+        chat_service = ChatService(openai_client, database)
+
+        # Return streaming response
+        if request.stream:
+            return StreamingResponse(
+                chat_service.chat_stream(
+                    request.messages,
+                    max_tokens=request.max_tokens or 1000,
+                    temperature=request.temperature or 0.7,
+                ),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Content-Type": "text/event-stream",
+                },
+            )
+        else:
+            # Non-streaming response (for compatibility)
+            response_content = ""
+            async for chunk in chat_service.chat_stream(
+                request.messages,
+                max_tokens=request.max_tokens or 1000,
+                temperature=request.temperature or 0.7,
+            ):
+                if chunk.startswith("data: "):
+                    try:
+                        chunk_data = json.loads(chunk[6:].strip())
+                        if chunk_data.get("content"):
+                            response_content += chunk_data["content"]
+                        elif chunk_data.get("done"):
+                            break
+                        elif chunk_data.get("error"):
+                            raise HTTPException(
+                                status_code=500, detail=chunk_data["error"]
+                            )
+                    except json.JSONDecodeError:
+                        continue
+
+            return {
+                "success": True,
+                "message": {"role": "assistant", "content": response_content},
+                "stream": False,
+            }
+
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 
 # Global exception handler

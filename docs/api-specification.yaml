@@ -6,11 +6,29 @@ info:
     
     The Synvya API provides secure access to a curated database of business information.
     The API is designed for AI agents to easily find businesses, products, and services
-    and in the future place orders directly with these businesses. 
+    and in the future place orders directly with these businesses.
+    
+    ## Integration Strategies
+    
+    The API supports two different integration approaches:
+    
+    ### Strategy 1: Simple Clients (No LLM) - Use `/api/chat`
+    **Best for:** Applications without built-in LLM capabilities that want natural language search
+    - Easy integration with single natural language endpoint
+    - Built-in AI powered by OpenAI GPT models on server side
+    - No LLM integration required on client side
+    - Automatic function selection and result formatting
+    
+    ### Strategy 2: Advanced Clients (Have LLM) - Use Direct Endpoints
+    **Best for:** Applications with existing LLM capabilities that want fine-grained control
+    - Full control over search functions and result processing
+    - Direct API calls without additional LLM processing overhead
+    - Custom logic and optimization opportunities
+    - Integration with your own LLM for intelligent routing
     
     ## Authentication
     
-    The API supports two authentication methods:
+    The API supports multiple authentication methods:
     - **API Key**: Send `X-API-Key` header with your API key
     - **Bearer Token**: Send `Authorization: Bearer <token>` header
     
@@ -19,6 +37,7 @@ info:
     - Default: 100 requests per minute per IP
     - Returns HTTP 429 when limit exceeded
     - Check `X-Rate-Limit-Remaining` header for remaining requests
+    - Chat endpoint may consume more rate limit due to internal processing
     
     ## CORS
     
@@ -68,13 +87,86 @@ paths:
                     type: string
                     example: "1.0.0"
 
+  /api/chat:
+    post:
+      summary: AI Chat Interface (Strategy 1)
+      description: |
+        Natural language interface for searching business data without requiring client-side LLM integration.
+        Perfect for simple clients that want AI-powered search capabilities without implementing their own language models.
+        
+        The server handles all AI processing using OpenAI's GPT models and automatically selects the best search strategy
+        based on the user's natural language query.
+        
+        **Features:**
+        - Natural language queries in plain English
+        - Automatic function calling to search endpoints
+        - Streaming and non-streaming response modes
+        - Context awareness with conversation history
+        - Smart search strategy selection
+      operationId: chatSearch
+      tags:
+        - Chat (Strategy 1)
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              simple_query:
+                summary: Simple business search
+                value:
+                  messages:
+                    - role: "user"
+                      content: "Find me coffee shops in Seattle"
+                  stream: true
+              conversation:
+                summary: Conversation with context
+                value:
+                  messages:
+                    - role: "user"
+                      content: "Find me restaurants"
+                    - role: "assistant"
+                      content: "I found several restaurants for you..."
+                    - role: "user"
+                      content: "What about coffee shops?"
+                  stream: false
+                  max_tokens: 1000
+      responses:
+        '200':
+          description: Chat response (streaming or non-streaming)
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Server-sent events for streaming responses
+                example: |
+                  data: {"content": "I found several coffee shops for you:\n\n"}
+                  data: {"content": "1. **Blue Bottle Coffee**\n"}
+                  data: {"done": true}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/search:
     post:
-      summary: Search for Products and Services
-      description: Search for products and services by name, description, or tags
+      summary: Search Products and Services (Strategy 2)
+      description: |
+        Direct search for products and services by name, description, or tags.
+        Part of Strategy 2 for advanced clients with existing LLM capabilities.
       operationId: searchProductsAndServices
       tags:
-        - Search
+        - Direct Search (Strategy 2)
       requestBody:
         required: true
         content:
@@ -105,11 +197,13 @@ paths:
 
   /api/search_by_business_type:
     post:
-      summary: Search Business Profiles
-      description: Search for business profiles by name or type
+      summary: Search Business Profiles (Strategy 2)
+      description: |
+        Direct search for business profiles by name or type with filtering capabilities.
+        Part of Strategy 2 for advanced clients with existing LLM capabilities.
       operationId: searchBusinessProfiles
       tags:
-        - Search
+        - Direct Search (Strategy 2)
       requestBody:
         required: true
         content:
@@ -134,11 +228,13 @@ paths:
 
   /api/profile/{pubkey}:
     get:
-      summary: Get Business Profile by Public Key
-      description: Retrieve a specific business profile using its public key (hex format)
+      summary: Get Business Profile by Public Key (Strategy 2)
+      description: |
+        Retrieve a specific business profile using its public key (hex format).
+        Part of Strategy 2 for advanced clients with existing LLM capabilities.
       operationId: getBusinessProfileByPubkey
       tags:
-        - Profiles
+        - Direct Search (Strategy 2)
       parameters:
         - name: pubkey
           in: path
@@ -178,11 +274,13 @@ paths:
 
   /api/stats:
     get:
-      summary: Get Database Statistics
-      description: Retrieve statistics about the profile database
+      summary: Get Database Statistics (Strategy 2)
+      description: |
+        Retrieve statistics about the profile database.
+        Part of Strategy 2 for advanced clients with existing LLM capabilities.
       operationId: getProfileStats
       tags:
-        - Statistics
+        - Direct Search (Strategy 2)
       responses:
         '200':
           description: Statistics retrieved successfully
@@ -199,11 +297,13 @@ paths:
 
   /api/business_types:
     get:
-      summary: Get Available Business Types
-      description: Retrieve the list of available business type filters
+      summary: Get Available Business Types (Strategy 2)
+      description: |
+        Retrieve the list of available business type filters.
+        Part of Strategy 2 for advanced clients with existing LLM capabilities.
       operationId: getBusinessTypes
       tags:
-        - Statistics
+        - Direct Search (Strategy 2)
       responses:
         '200':
           description: Business types retrieved successfully
@@ -264,6 +364,76 @@ components:
       description: Bearer token for authentication
 
   schemas:
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: ["user", "assistant", "system"]
+          description: The role of the message sender
+          example: "user"
+        content:
+          type: string
+          description: The content of the message
+          minLength: 1
+          maxLength: 4000
+          example: "Find me coffee shops in Seattle"
+
+    ChatRequest:
+      type: object
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          description: Array of chat messages forming the conversation
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          minItems: 1
+          maxItems: 20
+        stream:
+          type: boolean
+          description: Whether to stream the response
+          default: true
+          example: true
+        max_tokens:
+          type: integer
+          description: Maximum number of tokens in the response
+          minimum: 1
+          maximum: 4000
+          default: 1000
+          example: 1000
+        temperature:
+          type: number
+          description: Sampling temperature for response generation
+          minimum: 0
+          maximum: 2
+          default: 0.7
+          example: 0.7
+
+    ChatResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+          example: true
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+        stream:
+          type: boolean
+          description: Whether the response was streamed
+          example: false
+        error:
+          type: string
+          description: Error message if success is false
+          example: "Invalid message format"
+
     Profile:
       type: object
       description: A Nostr profile with business information
@@ -510,11 +680,9 @@ components:
 tags:
   - name: Health
     description: Server health and status
-  - name: Search
-    description: Profile search operations
-  - name: Profiles
-    description: Individual profile operations
-  - name: Statistics
-    description: Database statistics and metrics
+  - name: Chat (Strategy 1)
+    description: AI-powered natural language interface for simple clients without LLM
+  - name: Direct Search (Strategy 2)
+    description: Direct API endpoints for advanced clients with existing LLM capabilities
   - name: Administration
     description: Administrative operations 

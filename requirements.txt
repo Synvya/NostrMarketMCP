@@ -17,6 +17,9 @@ mcp
 # Synvya SDK for Nostr functionality
 synvya-sdk
 
+# OpenAI for LLM integration
+openai
+
 # Security and rate limiting
 
 # Environment and configuration management

@@ -7,8 +7,17 @@ import os
 import sys
 from pathlib import Path
 
-# Resolve project root (one level up from scripts) and add its "src" directory
+# Load .env file first, before setting up paths
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
 project_root = Path(__file__).resolve().parent.parent
+dotenv_path = project_root / ".env"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+    print(f"📁 Loaded environment from: {dotenv_path}")
+
+# Resolve project root (one level up from scripts) and add its "src" directory
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
@@ -28,6 +37,8 @@ default_env = {
     "BEARER_TOKEN": "local_test_bearer_token",
     "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000",
     "ENVIRONMENT": "development",
+    # OpenAI integration - REQUIRED for chat functionality
+    "OPENAI_API_KEY": "",  # Must be set by user in .env file
     # Rate limiting - more permissive for testing
     "RATE_LIMIT_REQUESTS": "1000",
     "RATE_LIMIT_WINDOW": "60",
@@ -56,12 +67,22 @@ def main():
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8080"))
     log_level = os.environ.get("LOG_LEVEL", "debug")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
 
     print("🚀 Starting local development server...")
     print(f"📊 API will be available at: http://{host}:{port}")
     print(f"📖 API docs at: http://{host}:{port}/docs")
     print(f"🔑 API Key for testing: {os.environ['API_KEY']}")
     print(f"💾 Database: {os.environ['DATABASE_PATH']}")
+
+    # Check OpenAI key configuration
+    if openai_key:
+        print(f"🤖 OpenAI integration: ✅ Configured")
+    else:
+        print(f"🤖 OpenAI integration: ⚠️  NOT CONFIGURED")
+        print(f"   Chat functionality will not work without OPENAI_API_KEY")
+        print(f"   Add OPENAI_API_KEY=sk-your-key-here to your .env file")
+
     print()
     print("Press Ctrl+C to stop the server")
     print("-" * 50)
