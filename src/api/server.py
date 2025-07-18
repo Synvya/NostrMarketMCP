@@ -865,11 +865,10 @@ async def chat_with_assistant(
                     max_tokens=request.max_tokens or 1000,
                     temperature=request.temperature or 0.7,
                 ),
-                media_type="text/plain",
+                media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
-                    "Content-Type": "text/event-stream",
                 },
             )
         else:

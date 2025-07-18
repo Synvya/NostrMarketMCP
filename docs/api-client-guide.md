@@ -4,7 +4,7 @@ This guide helps developers build clients for the Synvya API using the OpenAPI s
 
 ## 📋 Overview
 
-The Synvya API provides secure access to a curated database of business information. The API is designed for AI agents to easily find businesses, products, and services and in the future place orders directly with these businesses.
+The Synvya API provides secure access to a curated database of business information. The API is designed for AI agents to easily find businesses, products, and services and in the future place orders directly with these businesses. 
 
 ## 🛤️ Integration Strategies
 
@@ -604,7 +604,7 @@ class SynvyaDirectClient:
             'X-API-Key': api_key,
             'Content-Type': 'application/json'
         }
-
+    
     def search_profiles(self, query: str, limit: int = 10):
         """Direct search for products and services"""
         url = f"{self.base_url}/api/search"
@@ -612,7 +612,7 @@ class SynvyaDirectClient:
         response = requests.post(url, headers=self.headers, json=data)
         response.raise_for_status()
         return response.json()
-
+    
     def search_business_profiles(self, query: str = "", business_type: str = "", limit: int = 10):
         """Direct search for businesses by name or type"""
         url = f"{self.base_url}/api/search_by_business_type"
@@ -620,21 +620,21 @@ class SynvyaDirectClient:
         response = requests.post(url, headers=self.headers, json=data)
         response.raise_for_status()
         return response.json()
-
+    
     def get_profile(self, pubkey: str):
         """Get specific business profile by public key"""
         url = f"{self.base_url}/api/profile/{pubkey}"
         response = requests.get(url, headers=self.headers)
         response.raise_for_status()
         return response.json()
-
+        
     def get_business_types(self):
         """Get available business types"""
         url = f"{self.base_url}/api/business_types"
         response = requests.get(url, headers=self.headers)
         response.raise_for_status()
         return response.json()
-
+    
     def get_stats(self):
         """Get database statistics"""
         url = f"{self.base_url}/api/stats"
@@ -885,7 +885,7 @@ from your_client import SynvyaClient
 class TestSynvyaClient(unittest.TestCase):
     def setUp(self):
         self.client = SynvyaClient("http://test.example.com", "test_key")
-
+    
     @patch('requests.post')
     def test_search_profiles(self, mock_post):
         # Mock successful response
@@ -898,10 +898,10 @@ class TestSynvyaClient(unittest.TestCase):
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
-
+        
         # Test the method
         result = self.client.search_profiles("test", 10)
-
+        
         # Assertions
         self.assertTrue(result["success"])
         self.assertEqual(result["count"], 2)
