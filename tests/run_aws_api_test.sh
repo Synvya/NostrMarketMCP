@@ -69,8 +69,23 @@ echo "7. Testing specific profile..."
 curl -X GET $API_URL/api/profile/38267cf358b0b2fe41dfbbc491f288b8df1ed0291dce5862e4a209df96078ab8 -H "X-API-Key: $API_KEY" | jq .
 echo -e "\n"
 
-# 8. Test chat endpoint (non-streaming)
-echo "8. Testing chat endpoint (non-streaming)..."
+# 8. Test streaming headers (diagnostic)
+echo "8. Testing streaming response headers..."
+echo "🔍 Checking if Content-Type fix is deployed..."
+curl -I -X POST $API_URL/api/chat \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Hello"}
+    ],
+    "stream": true,
+    "max_tokens": 10
+  }' --max-time 10 2>/dev/null | head -10
+echo -e "\n"
+
+# 9. Test chat endpoint (non-streaming)
+echo "9. Testing chat endpoint (non-streaming)..."
 curl -X POST $API_URL/api/chat \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
@@ -83,13 +98,14 @@ curl -X POST $API_URL/api/chat \
   }' | jq .
 echo -e "\n"
 
-# 9. Test chat endpoint (streaming) - Enhanced
-echo "9. Testing chat endpoint (streaming)..."
+# 10. Test chat endpoint (streaming) - Enhanced
+echo "10. Testing chat endpoint (streaming)..."
 echo "💬 Asking: 'Find me some coffee shops'"
 echo "🔄 Testing streaming response (should show data chunks)..."
 
-# Test streaming with better error handling and timeout
-timeout 30s curl -X POST $API_URL/api/chat \
+# Test streaming with better error handling (macOS compatible)
+echo "⏱️  Starting streaming test (will timeout after 30s)..."
+curl -X POST $API_URL/api/chat \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -98,16 +114,16 @@ timeout 30s curl -X POST $API_URL/api/chat \
     ],
     "stream": true,
     "max_tokens": 150
-  }' -N --no-buffer -w "\nHTTP Status: %{http_code}\nTotal Time: %{time_total}s\n" || {
+  }' -N --no-buffer --max-time 30 -w "\nHTTP Status: %{http_code}\nTotal Time: %{time_total}s\n" || {
     echo "❌ Streaming request failed or timed out"
     echo "This might indicate the HTTP/2 framing issue is still present"
 }
 echo -e "\n"
 
-# 10. Additional streaming test with simple query
-echo "10. Testing streaming with simple query..."
+# 11. Additional streaming test with simple query
+echo "11. Testing streaming with simple query..."
 echo "💬 Asking: 'Hello'"
-timeout 15s curl -X POST $API_URL/api/chat \
+curl -X POST $API_URL/api/chat \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -116,7 +132,7 @@ timeout 15s curl -X POST $API_URL/api/chat \
     ],
     "stream": true,
     "max_tokens": 50
-  }' -N --no-buffer || {
+  }' -N --no-buffer --max-time 15 || {
     echo "❌ Simple streaming test failed"
 }
 echo -e "\n\n"
