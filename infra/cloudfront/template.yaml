@@ -18,7 +18,7 @@ Resources:
       Timeout: 30
       Environment:
         Variables:
-          SYNVYA_API_KEY: '{{resolve:secretsmanager:synvya-prod:SecretString:SYNVYA_API_KEY}}'
+          SYNVYA_API_KEY: '{{resolve:secretsmanager:synvya-api-keys-production:SecretString:SYNVYA_API_KEY}}'
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:synvya-prod
