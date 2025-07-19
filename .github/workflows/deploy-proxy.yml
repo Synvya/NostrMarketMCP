@@ -29,12 +29,11 @@ jobs:
 
       - name: Deploy to AWS
         run: |
-          sam deploy \
+            sam deploy \
             --template-file infra/cloudfront/template.yaml \
             --stack-name synvya-stream-proxy \
             --s3-bucket ${{ secrets.SAM_DEPLOY_BUCKET }} \
             --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
-            --resolve-s3 \
             --no-confirm-changeset \
             --region us-east-1
 
