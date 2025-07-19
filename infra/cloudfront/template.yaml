@@ -58,7 +58,7 @@ Resources:
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
         ViewerCertificate:
-          AcmCertificateArn: arn:aws:acm:us-east-1:123456789012:certificate/5afc8aa5-9cf5-4866-907a-103e91b24f25
+          AcmCertificateArn: arn:aws:acm:us-east-1:122610503853:certificate/5afc8aa5-9cf5-4866-907a-103e91b24f25
           SslSupportMethod: sni-only
         Aliases:
           - api-proxy.synvya.com
