@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+
+Resources:
+
+  StreamProxyFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: stream-proxy.handler
+      CodeUri: .
+      Role: arn:aws:iam::122610503853:role/synvya-api-proxy-lambda-role-production
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          SYNVYA_API_KEY: '{{resolve:secretsmanager:synvya-prod:SecretString:SYNVYA_API_KEY}}'
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:synvya-prod
+
+  StreamProxyURL:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref StreamProxyFn
+      AuthType: NONE
+      InvokeMode: RESPONSE_STREAM
+
+  StreamProxyPerm:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StreamProxyFn
+      Principal: url.amazonaws.com
+      Action: lambda:InvokeFunctionUrl
+      FunctionUrlAuthType: NONE
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaProxyOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: true
+            Headers:
+              - X-API-Key
+        Origins:
+          - Id: LambdaProxyOrigin
+            DomainName: !Select [2, !Split ["/", !GetAtt StreamProxyURL.FunctionUrl]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        ViewerCertificate:
+          AcmCertificateArn: arn:aws:acm:us-east-1:123456789012:certificate/5afc8aa5-9cf5-4866-907a-103e91b24f25
+          SslSupportMethod: sni-only
+        Aliases:
+          - api-proxy.synvya.com
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: "synvya.com."
+      Name: api-proxy.synvya.com
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
