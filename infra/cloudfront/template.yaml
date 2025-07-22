@@ -21,7 +21,7 @@ Resources:
           SYNVYA_API_KEY: '{{resolve:secretsmanager:synvya-api-keys-production:SecretString:SYNVYA_API_KEY}}'
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
-            SecretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:synvya-prod
+            SecretArn: arn:aws:secretsmanager:us-east-1:122610503853:secret:synvya-api-keys-production-ofo5Nu
 
   StreamProxyURL:
     Type: AWS::Lambda::Url
