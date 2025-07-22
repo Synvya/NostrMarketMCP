@@ -60,20 +60,20 @@ Resources:
             TargetOriginId: FastAPIOrigin
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [HEAD, GET]
-            CachePolicyId: 413fdacd-50ea-4b8f-bcd1-9a2067059475  # AWS managed policy to disable caching
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # AWS managed policy to disable caching
 
           - PathPattern: /api/*
             TargetOriginId: LambdaProxyOrigin
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
-            CachePolicyId: 413fdacd-50ea-4b8f-bcd1-9a2067059475
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
 
         DefaultCacheBehavior:
           TargetOriginId: LambdaProxyOrigin
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD, OPTIONS]
-          CachePolicyId: 413fdacd-50ea-4b8f-bcd1-9a2067059475
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
 
         ViewerCertificate:
           AcmCertificateArn: arn:aws:acm:us-east-1:122610503853:certificate/91f5d0f5-59e6-4519-b8e0-0c6ec946ec64
