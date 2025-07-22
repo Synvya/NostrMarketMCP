@@ -1,6 +1,7 @@
 const awslambda = require('@aws/awslambda');
 const fetch = require('node-fetch');
 
+
 exports.handler = awslambda.streamifyResponse(
     async (event, stream) => {
         stream.setHeader('Content-Type', 'text/event-stream');
