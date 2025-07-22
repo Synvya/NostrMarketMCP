@@ -135,6 +135,33 @@ curl -X POST $API_URL/api/chat \
   }' -N --no-buffer --max-time 15 || {
     echo "❌ Simple streaming test failed"
 }
+echo -e "\n"
+
+# 12. Proxy health
+echo "12. Proxy health..."
+PROXY_URL="https://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com/proxy"
+curl -kf "$PROXY_URL/health" && echo -e "\n"
+
+# 13. Proxy streaming headers
+echo "13. Proxy streaming headers..."
+curl -k -sS -o /dev/null -D - \
+  -X POST "$PROXY_URL/api/chat" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --data @- <<'EOF'
+{"messages":[{"role":"user","content":"Hello"}],"stream":true,"max_tokens":10}
+EOF
+echo -e "\n"
+
+# 14. Proxy streaming body
+echo "14. Proxy streaming body..."
+curl -k -N \
+  -X POST "$PROXY_URL/api/chat" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --data @- <<'EOF'
+{"messages":[{"role":"user","content":"Say ping and stop."}],"stream":true,"max_tokens":32}
+EOF
 echo -e "\n\n"
 
 echo "All tests completed!"
