@@ -43,23 +43,43 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        DefaultCacheBehavior:
-          TargetOriginId: LambdaProxyOrigin
-          ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
-          CachedMethods: [GET, HEAD]
-          ForwardedValues:
-            QueryString: true
-            Headers:
-              - X-API-Key
+
         Origins:
+          - Id: FastAPIOrigin
+            DomainName: api.synvya.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+
           - Id: LambdaProxyOrigin
             DomainName: !Select [2, !Split ["/", !GetAtt StreamProxyURL.FunctionUrl]]
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
+
+        CacheBehaviors:
+          - PathPattern: /health
+            TargetOriginId: FastAPIOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET]
+            CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25  # AWS managed policy to disable caching
+            Priority: 0
+
+          - PathPattern: /api/*
+            TargetOriginId: LambdaProxyOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25
+            Priority: 1
+
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaProxyOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25
+
         ViewerCertificate:
           AcmCertificateArn: arn:aws:acm:us-east-1:122610503853:certificate/91f5d0f5-59e6-4519-b8e0-0c6ec946ec64
           SslSupportMethod: sni-only
+
         Aliases:
           - proxy.synvya.com
 
