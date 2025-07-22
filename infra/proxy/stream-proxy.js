@@ -5,7 +5,7 @@ const API_KEY = process.env.API_KEY;
 const UPSTREAM_BASE = process.env.UPSTREAM_URL || 'https://api.synvya.com';
 
 const server = http.createServer(async (req, res) => {
-    if (req.url === '/health') {
+    if (req.url === '/health' || req.url === '/proxy/health') {
         res.writeHead(200, { 'content-type': 'text/plain' });
         return res.end('ok');
     }
