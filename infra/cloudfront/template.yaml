@@ -59,7 +59,7 @@ Resources:
           - PathPattern: /health
             TargetOriginId: FastAPIOrigin
             ViewerProtocolPolicy: redirect-to-https
-            AllowedMethods: [GET]
+            AllowedMethods: [HEAD, GET]
             CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25  # AWS managed policy to disable caching
 
           - PathPattern: /api/*
