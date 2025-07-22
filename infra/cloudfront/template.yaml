@@ -12,7 +12,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: stream-proxy.handler
-      CodeUri: .
+      CodeUri: infra/sam/
       Role: arn:aws:iam::122610503853:role/synvya-api-proxy-lambda-role-production
       MemorySize: 512
       Timeout: 30
