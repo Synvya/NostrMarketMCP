@@ -62,7 +62,13 @@ jobs:
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
 
       - name: Verify Proxy Health
-        run: curl --fail https://proxy.synvya.com/health
+        run: |
+          RESPONSE=$(curl --fail -s https://proxy.synvya.com/health)
+          echo "$RESPONSE"
+          if echo "$RESPONSE" | grep -q '"errorType"'; then
+            echo "ERROR DETECTED in Lambda health response"
+            exit 1
+          fi
 
       - name: Notify
         run: echo "Deployment of Streaming Proxy completed."

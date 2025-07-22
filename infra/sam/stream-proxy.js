@@ -1,9 +1,9 @@
-const fetch = require('node-fetch');
+import fetch from 'node-fetch';
 
 /**
- * Lambda proxy handler using native response streaming.
+ * Lambda proxy handler using native response streaming (ESM).
  */
-exports.handler = async (event) => {
+export const handler = async (event) => {
     const stream = event.responseStream;
 
     stream.setContentType('text/event-stream');
