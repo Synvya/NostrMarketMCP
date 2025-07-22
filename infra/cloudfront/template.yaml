@@ -61,13 +61,13 @@ Resources:
           AcmCertificateArn: arn:aws:acm:us-east-1:122610503853:certificate/5afc8aa5-9cf5-4866-907a-103e91b24f25
           SslSupportMethod: sni-only
         Aliases:
-          - api-proxy.synvya.com
+          - proxy.synvya.com
 
   DNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneName: "synvya.com."
-      Name: api-proxy.synvya.com
+      Name: proxy.synvya.com
       Type: A
       AliasTarget:
         HostedZoneId: Z2FDTNDATAQYW2
