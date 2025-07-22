@@ -1,7 +1,7 @@
-import awslambda from '@aws/awslambda';
-import fetch from 'node-fetch';
+const awslambda = require('@aws/awslambda');
+const fetch = require('node-fetch');
 
-export const handler = awslambda.streamifyResponse(
+exports.handler = awslambda.streamifyResponse(
     async (event, stream) => {
         stream.setHeader('Content-Type', 'text/event-stream');
         stream.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,9 +20,11 @@ export const handler = awslambda.streamifyResponse(
             stream.write(`data: ${JSON.stringify({ error: upstream.statusText })}\n\n`);
             return stream.end();
         }
+
         for await (const chunk of upstream.body) {
-            stream.write(chunk);           // pass every SSE line through
+            stream.write(chunk);
         }
+
         stream.end();
     }
 );
