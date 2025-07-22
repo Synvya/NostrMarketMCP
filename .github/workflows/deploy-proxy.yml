@@ -26,7 +26,12 @@ jobs:
 
       - name: Setup AWS SAM CLI
         uses: aws-actions/setup-sam@v2
-      
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
       - name: Install Node.js Dependencies
         run: |
           cd infra/sam
@@ -43,8 +48,9 @@ jobs:
             --s3-bucket ${{ secrets.SAM_DEPLOY_BUCKET }} \
             --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
             --no-confirm-changeset \
-            --region us-east-1
-      
+            --region us-east-1 \
+            --force-upload
+
       - name: Invalidate CloudFront Cache
         run: |
           aws cloudfront create-invalidation \
@@ -54,6 +60,9 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Verify Proxy Health
+        run: curl --fail https://proxy.synvya.com/health
 
       - name: Notify
         run: echo "Deployment of Streaming Proxy completed."
