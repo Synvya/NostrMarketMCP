@@ -61,14 +61,12 @@ Resources:
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET]
             CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25  # AWS managed policy to disable caching
-            Priority: 0
 
           - PathPattern: /api/*
             TargetOriginId: LambdaProxyOrigin
             ViewerProtocolPolicy: redirect-to-https
             AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
             CachePolicyId: 413fdacd-dead-4b4e-80f1-bd5c73ce5f25
-            Priority: 1
 
         DefaultCacheBehavior:
           TargetOriginId: LambdaProxyOrigin
