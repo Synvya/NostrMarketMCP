@@ -34,7 +34,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref StreamProxyFn
-      Principal: url.amazonaws.com
+      Principal: lambda.amazonaws.com
       Action: lambda:InvokeFunctionUrl
       FunctionUrlAuthType: NONE
 
