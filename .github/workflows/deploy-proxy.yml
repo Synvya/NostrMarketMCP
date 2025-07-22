@@ -1,10 +1,15 @@
-name: Deploy Streaming Proxy
+name: Deploy Streaming Proxy to AWS ECS
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    paths:
+      - 'infra/proxy/**'
+      - '.github/workflows/deploy-proxy.yml'
   workflow_dispatch:
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
 
 permissions:
   id-token: write
@@ -19,51 +24,63 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_PROXY_ROLE }}
-          aws-region: us-east-1
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Setup AWS SAM CLI
-        uses: aws-actions/setup-sam@v2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install Node.js Dependencies
-        run: |
-          cd infra/sam
-          npm install
-
-      - name: Build SAM project
-        run: sam build --template-file infra/cloudfront/template.yaml
-
-      - name: Deploy to AWS
-        run: |
-            sam deploy \
-            --template-file infra/cloudfront/template.yaml \
-            --stack-name synvya-stream-proxy \
-            --s3-bucket ${{ secrets.SAM_DEPLOY_BUCKET }} \
-            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
-            --no-confirm-changeset \
-            --region us-east-1 \
-            --force-upload
-
-      - name: Invalidate CloudFront Cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
+      - name: Build & push (linux/amd64)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-
-      - name: Verify Proxy Health
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.PROXY_ECR_REPOSITORY }}
         run: |
-          curl --fail --silent https://proxy.synvya.com/health
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:${IMAGE_TAG}
+          docker buildx build \
+            --platform linux/amd64 \
+            -f infra/proxy/Dockerfile infra/proxy \
+            -t $IMAGE_URI \
+            --push
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      - name: Notify
-        run: echo "Deployment of Streaming Proxy completed."
+      - name: Inject new image into task def
+        env:
+          CONTAINER_NAME: ${{ secrets.PROXY_CONTAINER_NAME }}
+        run: |
+          jq --arg IMAGE_URI "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" \
+            '.containerDefinitions |= map(if .name==$NAME then .image=$IMAGE_URI else . end)' \
+            infra/proxy/task-definition-proxy.json > infra/proxy/new-task-def-proxy.json
+
+      - name: Register task definition
+        id: register-task
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://infra/proxy/new-task-def-proxy.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_def_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ secrets.PROXY_ECS_CLUSTER }} \
+            --service ${{ secrets.PROXY_ECS_SERVICE }} \
+            --task-definition ${{ steps.register-task.outputs.task_def_arn }} \
+            --force-new-deployment
+
+      - name: Wait for service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.PROXY_ECS_CLUSTER }} \
+            --services ${{ secrets.PROXY_ECS_SERVICE }}
+
+      
+      - name: Done
+        if: always()
+        run: echo "Proxy deploy finished with status ${{ job.status }}"
