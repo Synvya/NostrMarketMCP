@@ -4,9 +4,23 @@ import fetch from 'node-fetch';
 const API_KEY = process.env.API_KEY;
 const UPSTREAM_BASE = process.env.UPSTREAM_URL || 'https://api.synvya.com';
 
+// CORS configuration for https://synvya.com
+const corsHeaders = {
+    'Access-Control-Allow-Origin': 'https://synvya.com',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400'
+};
+
 const server = http.createServer(async (req, res) => {
     const rawUrl = req.url || '/';
     const url = rawUrl.startsWith('/proxy/') ? rawUrl.slice('/proxy'.length) : rawUrl;
+
+    // Handle preflight OPTIONS requests
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200, corsHeaders);
+        return res.end();
+    }
 
     // Health checks (both raw and /proxy/ prefixed)
     if (rawUrl === '/health' || rawUrl === '/proxy/health' || url === '/health') {
@@ -17,7 +31,10 @@ const server = http.createServer(async (req, res) => {
             environment: 'production',
             auth_configured: true
         };
-        res.writeHead(200, { 'content-type': 'application/json' });
+        res.writeHead(200, {
+            'content-type': 'application/json',
+            ...corsHeaders
+        });
         return res.end(JSON.stringify(body));
     }
 
@@ -25,7 +42,8 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, {
             'content-type': 'text/event-stream',
             'cache-control': 'no-cache',
-            'connection': 'keep-alive'
+            'connection': 'keep-alive',
+            ...corsHeaders
         });
 
         const chunks = [];
@@ -59,7 +77,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    res.writeHead(404);
+    res.writeHead(404, corsHeaders);
     res.end();
 });
 
