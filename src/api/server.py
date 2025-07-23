@@ -469,6 +469,11 @@ class ChatService:
             except Exception:
                 pass
 
+        def get_msg_content(m):
+            if isinstance(m, dict):
+                return m.get("content", "")
+            return getattr(m, "content", "") or ""
+
         for round_idx in range(max_rounds):
             temp = temperature_plan if round_idx < max_rounds - 1 else temperature_final
 
@@ -478,10 +483,8 @@ class ChatService:
                 max_tokens=1000,
                 temperature=temp,
                 stream=False,
-                tools=getattr(self, "tools", None),
+                tools=self.tools,
                 tool_choice="auto",
-                functions=self.functions,  # keep legacy for older models/SDKs
-                function_call="auto",
             )
 
             choice = rsp.choices[0]
@@ -514,44 +517,8 @@ class ChatService:
                     )
                 continue
 
-            # ---- Legacy function_call path ----
-            if getattr(msg, "function_call", None):
-                func_name = msg.function_call.name
-                raw_args = msg.function_call.arguments or "{}"
-                try:
-                    args = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    args = {}
-                convo.append(
-                    {
-                        "role": "assistant",
-                        "content": None,
-                        "function_call": {"name": func_name, "arguments": raw_args},
-                    }
-                )
-                result = await self.call_function(func_name, args)
-                append_trace(
-                    {
-                        "tool": func_name,
-                        "args": args,
-                        "result_keys": list(result.keys()),
-                    }
-                )
-                convo.append(
-                    {
-                        "role": "function",
-                        "name": func_name,
-                        "content": json.dumps(result),
-                    }
-                )
-                continue
-
             # ---- No tool call: maybe final answer ----
-            final_content = (
-                msg.get("content")
-                if isinstance(msg, dict)
-                else getattr(msg, "content", "") or ""
-            )
+            final_content = get_msg_content(msg)
 
             # Safeguard: if first round & query smells like a search, force one search
             if round_idx == 0:

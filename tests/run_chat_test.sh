@@ -1,49 +1,35 @@
+  
 #!/bin/bash
+# Minimal test script: health, chat (non-stream), chat (stream), debug trace
+set -euo pipefail
 
-# AWS API Testing Script
-# Tests the deployed Nostr Profiles API
+API_URL=${API_URL:-"https://api.synvya.com"}
+API_KEY=${API_KEY:-""}
 
-set -e
-
-# Load environment variables from .env file
-if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
-else
-    echo "Error: .env file not found!"
-    echo "Create a .env file with API_KEY=your_actual_api_key"
-    exit 1
-fi
-
-# Check if API_KEY is set
 if [ -z "$API_KEY" ]; then
-    echo "Error: API_KEY not found in .env file!"
-    exit 1
+  echo "ERROR: Set API_KEY env var first" >&2
+  exit 1
 fi
 
-# Set your API endpoint
-API_URL="https://api.synvya.com"
-PROXY_URL="https://proxy.synvya.com"
+jq >/dev/null 2>&1 || { echo "jq not found. brew install jq" >&2; exit 1; }
 
-echo "Testing AWS API at: $API_URL"
-echo "Using API Key: ${API_KEY:0:8}..." # Show only first 8 characters for security
-echo ""
+printf "\n1) Health check\n";
+curl -s -f "$API_URL/health" | jq .
 
-# 1. Health check (no auth)
-echo "1. Testing health endpoint..."
-curl -f $API_URL/health | jq .
-echo -e "\n"
-
-# 2. Test chat endpoint 
-echo "8. Testing streaming response headers..."
-echo "🔍 Checking if Content-Type fix is deployed..."
-curl -I -X POST $API_URL/api/chat \
+printf "\n2) Chat non-stream\n";
+curl -s -X POST "$API_URL/api/chat" \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"find coffee in snoqualmie, wa"}],"stream":false}' | jq
-echo -e "\n"
+  -d '{"messages":[{"role":"user","content":"find coffee in snoqualmie, wa"}],"stream":false}' | jq .
 
-# 3. Traces
-curl -s -H "X-API-Key: $API_KEY" "$API_URL/api/debug/last_tool_loop" | jq
-echo -e "\n\n"
+printf "\n3) Chat stream (SSE)\n";
+curl -N -X POST "$API_URL/api/chat" \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"find coffee in snoqualmie, wa"}],"stream":true}' \
+  --max-time 30 || echo "(stream ended)"
 
-echo "All tests completed!"
+printf "\n4) Debug last tool loop\n";
+curl -s -H "X-API-Key: $API_KEY" "$API_URL/api/debug/last_tool_loop" | jq .
+
+echo "\nDone."
