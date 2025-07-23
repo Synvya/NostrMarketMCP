@@ -416,141 +416,97 @@ class ChatService:
             logger.error(f"Function call error for {function_name}: {e}")
             return {"success": False, "error": str(e)}
 
-    async def chat_stream(
+    async def _run_tool_loop(
         self,
         messages: List[ChatMessage],
-        max_tokens: int = 1000,
-        temperature: float = 0.7,
-    ):
-        """Handle streaming chat with OpenAI and function calling."""
-        try:
-            # Convert messages to OpenAI format
-            openai_messages = [
-                {"role": msg.role, "content": msg.content} for msg in messages
-            ]
+        max_rounds: int = 5,
+        openai_model: str = "gpt-4",
+        temperature_plan: float = 0.2,
+        temperature_final: float = 0.7,
+    ) -> str:
+        """Deterministic tool loop: call model, execute function calls, feed results back, repeat until final text.
+        Returns the final assistant text content.
+        """
+        # Convert ChatMessage -> OpenAI format
+        convo = [{"role": m.role, "content": m.content} for m in messages]
 
-            # Add system message if not present
-            if not openai_messages or openai_messages[0]["role"] != "system":
-                system_message = {
+        # Ensure system prompt exists
+        if not convo or convo[0]["role"] != "system":
+            convo.insert(
+                0,
+                {
                     "role": "system",
-                    "content": """You are a helpful shopping assistant. You help people find businesses, products, and services from a database that contains business information.
+                    "content": """You are a helpful shopping assistant. You help people find businesses, products, and services from a database that contains business information.\n\nYou can call tools to search: search_profiles, search_business_profiles, get_profile_by_pubkey, get_business_types, get_stats. Use them when needed. Deduplicate duplicate businesses (prefer production over demo).""",
+                },
+            )
 
-You have access to a business directory database with comprehensive business profiles. You can:
-- Search broadly for businesses using api/search
-- Search businesses filtered by specific business type using api/search_by_business_type
-- Get detailed business information using api/profile/<public-key>
-- Get all available business categories using api/business_types
-- Get database statistics using api/stats
-- Refresh the database with latest business information using api/refresh_database
+        for round_idx in range(max_rounds):
+            # Use lower temp during planning/tool phase
+            temp = temperature_plan if round_idx < max_rounds - 1 else temperature_final
 
-When users ask about finding businesses, products, or services, use the appropriate search functions to help them. Be helpful, accurate, and provide relevant results. If search results are empty, suggest alternative search terms or broader categories.
-
-Available business types: retail, restaurant, service, business, entertainment, other
-
-Important: If you find duplicate entries for the same business, only present one of them to the user. If duplicate entries exist where one has environment="demo" and another has environment="production", always present the "production" entry and ignore the "demo" entry.""",
-                }
-                openai_messages.insert(0, system_message)
-
-            # Make initial request to OpenAI
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=openai_messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stream=True,
+            rsp = self.client.chat.completions.create(
+                model=openai_model,
+                messages=convo,
+                max_tokens=1000,
+                temperature=temp,
+                stream=False,
                 functions=self.functions,
                 function_call="auto",
             )
 
-            # Process streaming response
-            function_call_buffer = {"name": "", "arguments": ""}
-            collecting_function_call = False
+            choice = rsp.choices[0]
+            msg = (
+                choice.message if hasattr(choice, "message") else choice
+            )  # safety for SDK versions
 
-            for chunk in response:
-                if chunk.choices[0].delta.function_call:
-                    # Handle function calling
-                    collecting_function_call = True
-                    func_call = chunk.choices[0].delta.function_call
+            # If the model wants to call a function
+            if getattr(msg, "function_call", None):
+                func_name = msg.function_call.name
+                raw_args = msg.function_call.arguments or "{}"
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
 
-                    if func_call.name:
-                        function_call_buffer["name"] += func_call.name
-                    if func_call.arguments:
-                        function_call_buffer["arguments"] += func_call.arguments
+                # Append assistant message with the function call
+                convo.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {"name": func_name, "arguments": raw_args},
+                    }
+                )
 
-                elif (
-                    collecting_function_call
-                    and chunk.choices[0].finish_reason == "function_call"
-                ):
-                    # Execute function call
-                    try:
-                        function_name = function_call_buffer["name"]
-                        arguments = json.loads(function_call_buffer["arguments"])
+                # Execute tool
+                result = await self.call_function(func_name, args)
 
-                        logger.info(
-                            f"Executing function: {function_name} with args: {arguments}"
-                        )
+                # Append tool result
+                convo.append(
+                    {
+                        "role": "function",
+                        "name": func_name,
+                        "content": json.dumps(result),
+                    }
+                )
+                # Loop again
+                continue
 
-                        function_result = await self.call_function(
-                            function_name, arguments
-                        )
+            # No function call => final text
+            final_content = msg.get("content") if isinstance(msg, dict) else msg.content
+            return final_content or ""
 
-                        # Add function result to conversation and continue
-                        openai_messages.append(
-                            {
-                                "role": "assistant",
-                                "content": None,
-                                "function_call": {
-                                    "name": function_name,
-                                    "arguments": function_call_buffer["arguments"],
-                                },
-                            }
-                        )
-                        openai_messages.append(
-                            {
-                                "role": "function",
-                                "name": function_name,
-                                "content": json.dumps(function_result),
-                            }
-                        )
+        # Fallback if loop exits without return
+        return "Sorry, I couldn't complete the request after multiple tool calls."
 
-                        # Continue conversation with function result
-                        follow_up_response = self.client.chat.completions.create(
-                            model="gpt-4",
-                            messages=openai_messages,
-                            max_tokens=max_tokens,
-                            temperature=temperature,
-                            stream=True,
-                        )
+    async def chat_stream(self, messages: List[ChatMessage]):
+        """Compatibility wrapper that yields the final text once (no internal tool streaming)."""
+        final_text = await self._run_tool_loop(messages)
+        yield f"data: {json.dumps({'content': final_text})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
 
-                        for follow_chunk in follow_up_response:
-                            if follow_chunk.choices[0].delta.content:
-                                content = follow_chunk.choices[0].delta.content
-                                yield f"data: {json.dumps({'content': content})}\n\n"
-
-                    except Exception as e:
-                        logger.error(f"Function execution error: {e}")
-                        error_msg = f"Error executing search: {str(e)}"
-                        yield f"data: {json.dumps({'content': error_msg})}\n\n"
-
-                    # Reset function call buffer
-                    function_call_buffer = {"name": "", "arguments": ""}
-                    collecting_function_call = False
-
-                elif chunk.choices[0].delta.content and not collecting_function_call:
-                    # Regular content streaming
-                    content = chunk.choices[0].delta.content
-                    yield f"data: {json.dumps({'content': content})}\n\n"
-
-            # Send completion marker
-            yield f"data: {json.dumps({'done': True})}\n\n"
-
-        except Exception as e:
-            logger.error(f"Chat stream error: {e}")
-            error_msg = f"Chat error: {str(e)}"
-            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    # Dynamic dependency helper
 
 
-# Dynamic dependency helper
 def get_auth_dependencies():
     """Get authentication dependencies based on current config."""
     from .security import get_security_config
@@ -847,24 +803,19 @@ async def chat_with_assistant(
     openai_api_key: str = Depends(get_chat_authenticated_user),
     database: Database = Depends(get_database),
 ):
-    """Stream chat responses from AI assistant with profile search capabilities."""
+    """Return chat response using a deterministic server-side tool loop. Streams only the final text if request.stream is True."""
     try:
         logger.info(
             f"Chat request: {len(request.messages)} messages, stream={request.stream}"
         )
 
-        # Create OpenAI client and chat service
         openai_client = get_openai_client(openai_api_key)
         chat_service = ChatService(openai_client, database)
 
-        # Return streaming response
         if request.stream:
+            # One-shot stream of final answer
             return StreamingResponse(
-                chat_service.chat_stream(
-                    request.messages,
-                    max_tokens=request.max_tokens or 1000,
-                    temperature=request.temperature or 0.7,
-                ),
+                chat_service.chat_stream(request.messages),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -872,33 +823,12 @@ async def chat_with_assistant(
                 },
             )
         else:
-            # Non-streaming response (for compatibility)
-            response_content = ""
-            async for chunk in chat_service.chat_stream(
-                request.messages,
-                max_tokens=request.max_tokens or 1000,
-                temperature=request.temperature or 0.7,
-            ):
-                if chunk.startswith("data: "):
-                    try:
-                        chunk_data = json.loads(chunk[6:].strip())
-                        if chunk_data.get("content"):
-                            response_content += chunk_data["content"]
-                        elif chunk_data.get("done"):
-                            break
-                        elif chunk_data.get("error"):
-                            raise HTTPException(
-                                status_code=500, detail=chunk_data["error"]
-                            )
-                    except json.JSONDecodeError:
-                        continue
-
+            final_text = await chat_service._run_tool_loop(request.messages)
             return {
                 "success": True,
-                "message": {"role": "assistant", "content": response_content},
+                "message": {"role": "assistant", "content": final_text},
                 "stream": False,
             }
-
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
