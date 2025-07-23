@@ -10,8 +10,15 @@ const server = http.createServer(async (req, res) => {
 
     // Health checks (both raw and /proxy/ prefixed)
     if (rawUrl === '/health' || rawUrl === '/proxy/health' || url === '/health') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        return res.end('ok');
+        const body = {
+            status: 'healthy',
+            service: 'secure-nostr-profiles-api',
+            version: '1.0.0',
+            environment: 'production',
+            auth_configured: true
+        };
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify(body));
     }
 
     if (req.method === 'POST' && url.startsWith('/api/')) {

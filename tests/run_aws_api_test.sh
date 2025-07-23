@@ -21,8 +21,8 @@ if [ -z "$API_KEY" ]; then
 fi
 
 # Set your API endpoint
-# API_URL="http://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com"
 API_URL="https://api.synvya.com"
+PROXY_URL="https://proxy.synvya.com"
 
 echo "Testing AWS API at: $API_URL"
 echo "Using API Key: ${API_KEY:0:8}..." # Show only first 8 characters for security
@@ -139,7 +139,7 @@ echo -e "\n"
 
 # 12. Proxy health
 echo "12. Proxy health..."
-PROXY_URL="https://nostr-api-alb-792184217.us-east-1.elb.amazonaws.com/proxy"
+echo "Testing AWS Proxy API at: $PROXY_URL"
 curl -kf "$PROXY_URL/health" && echo -e "\n"
 
 # 13. Proxy streaming headers
