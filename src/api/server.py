@@ -440,7 +440,7 @@ class ChatService:
         max_rounds: int = 5,
         openai_model: str = "gpt-4",
         temperature_plan: float = 0.2,
-        temperature_final: float = 0.7,
+        temperature_final: float = 0.2,
     ) -> str:
         """
         Deterministic tool loop: call model, execute function calls, feed results back, repeat until final text.
@@ -474,6 +474,7 @@ class ChatService:
                 return m.get("content", "")
             return getattr(m, "content", "") or ""
 
+        had_hits_any = False
         for round_idx in range(max_rounds):
             temp = temperature_plan if round_idx < max_rounds - 1 else temperature_final
 
@@ -513,6 +514,23 @@ class ChatService:
                             "tool_call_id": tc.id,
                             "name": name,
                             "content": json.dumps(result),
+                        }
+                    )
+                    # Determine hit count and add guardrail message
+                    count = 0
+                    if isinstance(result, dict):
+                        count = result.get("count", 0)
+                    had_hits_any = locals().get("had_hits_any", False) or (count > 0)
+                    locals()["had_hits_any"] = had_hits_any
+
+                    convo.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                f"Tool '{name}' returned {count} results. "
+                                "If count > 0, you must present at least one relevant result and you must not claim that nothing was found. "
+                                "If count == 0, consider broadening or adjusting the search once before apologizing."
+                            ),
                         }
                     )
                 continue
@@ -573,6 +591,27 @@ class ChatService:
                         }
                     )
                     continue
+
+            # Consistency check: if we had hits, ask the model to ensure it used them
+            had_hits_any = locals().get("had_hits_any", False)
+            if had_hits_any:
+                convo.append(
+                    {
+                        "role": "system",
+                        "content": "Ensure your final answer correctly reflects the tool results above. Do not state that nothing was found if any tool returned results. Present the top matches clearly.",
+                    }
+                )
+                rsp_fix = self.client.chat.completions.create(
+                    model=openai_model,
+                    messages=convo,
+                    max_tokens=800,
+                    temperature=temperature_final,
+                    stream=False,
+                    tools=self.tools,
+                    tool_choice="none",
+                )
+                fixed_msg = getattr(rsp_fix.choices[0], "message", rsp_fix.choices[0])
+                final_content = get_msg_content(fixed_msg) or final_content
 
             append_trace({"final": final_content})
             return final_content
