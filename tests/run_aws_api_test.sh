@@ -77,7 +77,7 @@ curl -I -X POST $API_URL/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
-      {"role": "user", "content": "Hello"}
+      {"role": "user", "content": "find coffee in snoqualmie, wa"}
     ],
     "stream": true,
     "max_tokens": 10
@@ -91,7 +91,7 @@ curl -X POST $API_URL/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
-      {"role": "user", "content": "What business types are available?"}
+      {"role": "user", "content": "find coffee in snoqualmie, wa"}
     ],
     "stream": false,
     "max_tokens": 200
@@ -100,7 +100,7 @@ echo -e "\n"
 
 # 10. Test chat endpoint (streaming) - Enhanced
 echo "10. Testing chat endpoint (streaming)..."
-echo "💬 Asking: 'Find me some coffee shops'"
+echo "💬 Asking: 'find coffee in snoqualmie, wa'"
 echo "🔄 Testing streaming response (should show data chunks)..."
 
 # Test streaming with better error handling (macOS compatible)
@@ -110,7 +110,7 @@ curl -X POST $API_URL/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
-      {"role": "user", "content": "Find me some coffee shops"}
+      {"role": "user", "content": "find coffee in snoqualmie, wa"}
     ],
     "stream": true,
     "max_tokens": 150
@@ -160,7 +160,7 @@ curl -k -N \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   --data @- <<'EOF'
-{"messages":[{"role":"user","content":"Say ping and stop."}],"stream":true,"max_tokens":32}
+{"messages":[{"role":"user","content":"find coffee in snoqualmie, wa"}],"stream":true,"max_tokens":32}
 EOF
 echo -e "\n\n"
 

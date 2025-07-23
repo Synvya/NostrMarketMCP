@@ -14,6 +14,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# Debug: trace for last tool loop
+LAST_TOOL_TRACE: list | None = None
+
 import openai
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
@@ -287,6 +290,21 @@ class ChatService:
                 "parameters": {"type": "object", "properties": {}},
             },
         ]
+        # Mirror legacy functions list into the new tools schema for tool_calls support
+        self.tools = []
+        for f in self.functions:
+            self.tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": f["name"],
+                        "description": f.get("description", ""),
+                        "parameters": f.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    },
+                }
+            )
 
     def _deduplicate_profiles(self, profiles: List[dict]) -> List[dict]:
         """
@@ -424,24 +442,34 @@ class ChatService:
         temperature_plan: float = 0.2,
         temperature_final: float = 0.7,
     ) -> str:
-        """Deterministic tool loop: call model, execute function calls, feed results back, repeat until final text.
+        """
+        Deterministic tool loop: call model, execute function calls, feed results back, repeat until final text.
+        Supports both tool_calls (OpenAI v2 API) and legacy function_call, and records a debug trace.
+        Forces one search if no tool is called on the first round and the query smells like a search.
         Returns the final assistant text content.
         """
-        # Convert ChatMessage -> OpenAI format
+        global LAST_TOOL_TRACE
         convo = [{"role": m.role, "content": m.content} for m in messages]
 
-        # Ensure system prompt exists
+        # Ensure a strong system message exists
         if not convo or convo[0]["role"] != "system":
             convo.insert(
                 0,
                 {
                     "role": "system",
-                    "content": """You are a helpful shopping assistant. You help people find businesses, products, and services from a database that contains business information.\n\nYou can call tools to search: search_profiles, search_business_profiles, get_profile_by_pubkey, get_business_types, get_stats. Use them when needed. Deduplicate duplicate businesses (prefer production over demo).""",
+                    "content": """You MUST call the search tools before answering any query about businesses, places, products, or services.\nIf a search returns zero results, broaden or adjust parameters and try again once. Only after two failed searches may you apologize.\nAlways deduplicate duplicates (prefer environment="production").""",
                 },
             )
 
+        LAST_TOOL_TRACE = []
+
+        def append_trace(entry: dict):
+            try:
+                LAST_TOOL_TRACE.append(entry)
+            except Exception:
+                pass
+
         for round_idx in range(max_rounds):
-            # Use lower temp during planning/tool phase
             temp = temperature_plan if round_idx < max_rounds - 1 else temperature_final
 
             rsp = self.client.chat.completions.create(
@@ -450,16 +478,43 @@ class ChatService:
                 max_tokens=1000,
                 temperature=temp,
                 stream=False,
-                functions=self.functions,
+                tools=getattr(self, "tools", None),
+                tool_choice="auto",
+                functions=self.functions,  # keep legacy for older models/SDKs
                 function_call="auto",
             )
 
             choice = rsp.choices[0]
-            msg = (
-                choice.message if hasattr(choice, "message") else choice
-            )  # safety for SDK versions
+            msg = getattr(choice, "message", choice)
+            append_trace({"round": round_idx, "openai_msg": msg})
 
-            # If the model wants to call a function
+            # ---- New tool_calls path ----
+            if getattr(msg, "tool_calls", None):
+                convo.append(
+                    {"role": "assistant", "content": None, "tool_calls": msg.tool_calls}
+                )
+                for tc in msg.tool_calls:
+                    name = tc.function.name
+                    raw_args = tc.function.arguments or "{}"
+                    try:
+                        args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        args = {}
+                    result = await self.call_function(name, args)
+                    append_trace(
+                        {"tool": name, "args": args, "result_keys": list(result.keys())}
+                    )
+                    convo.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": name,
+                            "content": json.dumps(result),
+                        }
+                    )
+                continue
+
+            # ---- Legacy function_call path ----
             if getattr(msg, "function_call", None):
                 func_name = msg.function_call.name
                 raw_args = msg.function_call.arguments or "{}"
@@ -467,8 +522,6 @@ class ChatService:
                     args = json.loads(raw_args)
                 except json.JSONDecodeError:
                     args = {}
-
-                # Append assistant message with the function call
                 convo.append(
                     {
                         "role": "assistant",
@@ -476,11 +529,14 @@ class ChatService:
                         "function_call": {"name": func_name, "arguments": raw_args},
                     }
                 )
-
-                # Execute tool
                 result = await self.call_function(func_name, args)
-
-                # Append tool result
+                append_trace(
+                    {
+                        "tool": func_name,
+                        "args": args,
+                        "result_keys": list(result.keys()),
+                    }
+                )
                 convo.append(
                     {
                         "role": "function",
@@ -488,14 +544,72 @@ class ChatService:
                         "content": json.dumps(result),
                     }
                 )
-                # Loop again
                 continue
 
-            # No function call => final text
-            final_content = msg.get("content") if isinstance(msg, dict) else msg.content
-            return final_content or ""
+            # ---- No tool call: maybe final answer ----
+            final_content = (
+                msg.get("content")
+                if isinstance(msg, dict)
+                else getattr(msg, "content", "") or ""
+            )
 
-        # Fallback if loop exits without return
+            # Safeguard: if first round & query smells like a search, force one search
+            if round_idx == 0:
+                user_msg = next(
+                    (m for m in reversed(convo) if m["role"] == "user"), None
+                )
+                user_text = (user_msg or {}).get("content", "").lower()
+                keywords = [
+                    "find",
+                    "search",
+                    "coffee",
+                    "near",
+                    "restaurant",
+                    "shop",
+                    "business",
+                    "in ",
+                ]
+                if any(k in user_text for k in keywords):
+                    forced_args = {"query": user_text, "limit": 10}
+                    forced_result = await self.call_function(
+                        "search_profiles", forced_args
+                    )
+                    append_trace(
+                        {
+                            "forced_tool": "search_profiles",
+                            "args": forced_args,
+                            "result_keys": list(forced_result.keys()),
+                        }
+                    )
+                    convo.append(
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "forced-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search_profiles",
+                                        "arguments": json.dumps(forced_args),
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                    convo.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": "forced-1",
+                            "name": "search_profiles",
+                            "content": json.dumps(forced_result),
+                        }
+                    )
+                    continue
+
+            append_trace({"final": final_content})
+            return final_content
+
         return "Sorry, I couldn't complete the request after multiple tool calls."
 
     async def chat_stream(self, messages: List[ChatMessage]):
@@ -832,6 +946,15 @@ async def chat_with_assistant(
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+@app.get("/api/debug/last_tool_loop")
+async def get_last_tool_loop(
+    openai_api_key: str = Depends(get_chat_authenticated_user),
+):
+    """Return the last recorded tool loop trace for debugging."""
+    global LAST_TOOL_TRACE
+    return {"trace": LAST_TOOL_TRACE or []}
 
 
 # Global exception handler
