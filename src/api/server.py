@@ -539,9 +539,17 @@ class ChatService:
                     # If results were found, we can directly craft a quick response template to avoid a second LLM call for speed.
                     if count > 0:
                         top = result["profiles"][0]
+                        city = (
+                            top.get("city")
+                            or top.get("state")
+                            or top.get("country")
+                            or "this area"
+                        )
+                        biz_type = top.get("business_type", "business")
+                        name = top.get("display_name") or top.get("name", "(no name)")
+
                         quick_answer = (
-                            f"Here is a {top.get('business_type','business')} in {top.get('name') or top.get('display_name','this area')}:\n\n"
-                            f"**{top.get('display_name') or top.get('name','(no name)')}**\n"
+                            f"Here is a {biz_type} called **{name}** in {city}:\n\n"
                             f"- About: {top.get('about','(no description)')}\n"
                             f"- Website: {top.get('website','N/A')}\n"
                         )
