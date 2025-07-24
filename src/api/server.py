@@ -524,7 +524,7 @@ class ChatService:
                     count = 0
                     if isinstance(result, dict):
                         count = result.get("count", 0)
-                    had_hits_any = had_hits_any or (count > 0)
+                    had_hits_any = had_hits_any or (result.get("count", 0) > 0)
 
                     convo.append(
                         {
@@ -536,8 +536,12 @@ class ChatService:
                             ),
                         }
                     )
-                    # If results were found, we can directly craft a quick response template to avoid a second LLM call for speed.
-                    if count > 0:
+                    # Only craft quick answer when the tool returned profile results
+                    if (
+                        isinstance(result, dict)
+                        and result.get("profiles")
+                        and result.get("count", 0) > 0
+                    ):
                         top = result["profiles"][0]
                         city = (
                             top.get("city")
