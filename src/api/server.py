@@ -549,9 +549,7 @@ class ChatService:
                         name = top.get("display_name") or top.get("name", "(no name)")
 
                         quick_answer = (
-                            f"Here is a {biz_type} called **{name}** in {city}:\n\n"
-                            f"- About: {top.get('about','(no description)')}\n"
-                            f"- Website: {top.get('website','N/A')}\n"
+                            f"Here is a {biz_type} called **{name}** in {city}."
                         )
                         append_trace({"direct_answer": quick_answer})
                         profiles_data = result["profiles"]
