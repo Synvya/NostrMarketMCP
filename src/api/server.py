@@ -520,8 +520,7 @@ class ChatService:
                     count = 0
                     if isinstance(result, dict):
                         count = result.get("count", 0)
-                    had_hits_any = locals().get("had_hits_any", False) or (count > 0)
-                    locals()["had_hits_any"] = had_hits_any
+                    had_hits_any = had_hits_any or (count > 0)
 
                     convo.append(
                         {
@@ -559,6 +558,12 @@ class ChatService:
                     forced_result = await self.call_function(
                         "search_profiles", forced_args
                     )
+                    # update hit flag based on forced search
+                    if (
+                        isinstance(forced_result, dict)
+                        and forced_result.get("count", 0) > 0
+                    ):
+                        had_hits_any = True
                     append_trace(
                         {
                             "forced_tool": "search_profiles",
@@ -593,7 +598,8 @@ class ChatService:
                     continue
 
             # Consistency check: if we had hits, ask the model to ensure it used them
-            had_hits_any = locals().get("had_hits_any", False)
+            # Use the outer-scope flag directly
+            # had_hits_any already reflects any successful tool result
             if had_hits_any:
                 convo.append(
                     {
