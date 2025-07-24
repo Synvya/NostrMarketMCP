@@ -444,12 +444,12 @@ class ChatService:
         openai_model: str = "gpt-4o-mini",
         temperature_plan: float = 0.2,
         temperature_final: float = 0.2,
-    ) -> str:
+    ) -> tuple[str, List[dict]]:
         """
         Deterministic tool loop: call model, execute function calls, feed results back, repeat until final text.
+        Returns (text, profiles) tuple for use in streaming and UI.
         Supports both tool_calls (OpenAI v2 API) and legacy function_call, and records a debug trace.
         Forces one search if no tool is called on the first round and the query smells like a search.
-        Returns the final assistant text content.
         """
         global LAST_TOOL_TRACE
         convo = [{"role": m.role, "content": m.content} for m in messages]
@@ -478,6 +478,7 @@ class ChatService:
             return getattr(m, "content", "") or ""
 
         had_hits_any = False
+        profiles_data: List[dict] = []
         for round_idx in range(max_rounds):
             temp = temperature_plan if round_idx < max_rounds - 1 else temperature_final
 
@@ -545,7 +546,8 @@ class ChatService:
                             f"- Website: {top.get('website','N/A')}\n"
                         )
                         append_trace({"direct_answer": quick_answer})
-                        return quick_answer
+                        profiles_data = result["profiles"]
+                        return quick_answer, profiles_data
                 continue
 
             # ---- No tool call: maybe final answer ----
@@ -634,14 +636,20 @@ class ChatService:
                 final_content = get_msg_content(fixed_msg) or final_content
 
             append_trace({"final": final_content})
-            return final_content
+            return final_content, profiles_data
 
-        return "Sorry, I couldn't complete the request after multiple tool calls."
+        return "Sorry, I couldn't complete the request after multiple tool calls.", []
 
     async def chat_stream(self, messages: List[ChatMessage]):
-        """Compatibility wrapper that yields the final text once (no internal tool streaming)."""
-        final_text = await self._run_tool_loop(messages)
+        """Streams final text plus a secondary 'profiles' SSE event if structured data is present."""
+        final_text, profiles = await self._run_tool_loop(messages)
+        # main content event (default type)
         yield f"data: {json.dumps({'content': final_text})}\n\n"
+        # custom event with structured data for the client UI
+        if profiles:
+            yield "event: profiles\n"
+            yield f"data: {json.dumps({'profiles': profiles})}\n\n"
+        # done marker
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     # Dynamic dependency helper
@@ -963,10 +971,11 @@ async def chat_with_assistant(
                 },
             )
         else:
-            final_text = await chat_service._run_tool_loop(request.messages)
+            final_text, profiles = await chat_service._run_tool_loop(request.messages)
             return {
                 "success": True,
                 "message": {"role": "assistant", "content": final_text},
+                "profiles": profiles,
                 "stream": False,
             }
     except Exception as e:
