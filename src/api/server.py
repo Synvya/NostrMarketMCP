@@ -49,6 +49,9 @@ logger = logging.getLogger(__name__)
 # Database configuration
 DEFAULT_DB_PATH = os.getenv("DATABASE_PATH", str(Path.home() / ".nostr_profiles.db"))
 
+# Limit response size for faster latency
+MAX_LLM_TOKENS = 400  # limit response size for faster latency
+
 # Global database instance
 db: Optional[Database] = None
 
@@ -438,7 +441,7 @@ class ChatService:
         self,
         messages: List[ChatMessage],
         max_rounds: int = 5,
-        openai_model: str = "gpt-4",
+        openai_model: str = "gpt-4o-mini",
         temperature_plan: float = 0.2,
         temperature_final: float = 0.2,
     ) -> str:
@@ -481,7 +484,7 @@ class ChatService:
             rsp = self.client.chat.completions.create(
                 model=openai_model,
                 messages=convo,
-                max_tokens=1000,
+                max_tokens=MAX_LLM_TOKENS,
                 temperature=temp,
                 stream=False,
                 tools=self.tools,
@@ -532,6 +535,17 @@ class ChatService:
                             ),
                         }
                     )
+                    # If results were found, we can directly craft a quick response template to avoid a second LLM call for speed.
+                    if count > 0:
+                        top = result["profiles"][0]
+                        quick_answer = (
+                            f"Here is a {top.get('business_type','business')} in {top.get('name') or top.get('display_name','this area')}:\n\n"
+                            f"**{top.get('display_name') or top.get('name','(no name)')}**\n"
+                            f"- About: {top.get('about','(no description)')}\n"
+                            f"- Website: {top.get('website','N/A')}\n"
+                        )
+                        append_trace({"direct_answer": quick_answer})
+                        return quick_answer
                 continue
 
             # ---- No tool call: maybe final answer ----
@@ -610,7 +624,7 @@ class ChatService:
                 rsp_fix = self.client.chat.completions.create(
                     model=openai_model,
                     messages=convo,
-                    max_tokens=800,
+                    max_tokens=MAX_LLM_TOKENS,
                     temperature=temperature_final,
                     stream=False,
                     tools=self.tools,
