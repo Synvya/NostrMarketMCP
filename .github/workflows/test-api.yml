@@ -43,6 +43,5 @@ jobs:
       env:
         API_KEY: test_api_key_ci
         ENVIRONMENT: test
-        PYTHONPATH: ${{ github.workspace }}
       run: |
         bash tests/run_api_local_tests.sh
