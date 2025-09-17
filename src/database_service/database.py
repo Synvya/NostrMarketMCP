@@ -782,7 +782,9 @@ class Database:
                 "SELECT MAX(created_at) FROM events WHERE kind = 0"
             ) as cursor:
                 row = await cursor.fetchone()
-                stats["last_updated"] = row[0] if row and row[0] else 0
+                # Use None to explicitly indicate "no data" instead of 0,
+                # which could be misinterpreted as a valid Unix epoch.
+                stats["last_updated"] = row[0] if row and row[0] else None
 
             return stats
         except sqlite3.Error as e:
@@ -983,8 +985,9 @@ class Database:
                     if location:  # Skip empty locations
                         tags.append(["g", location])
 
-            # Use last_updated if provided, otherwise use current time
-            created_at = profile_data.get("last_updated", int(time.time()))
+            # Use last_updated if provided and truthy, otherwise use current time
+            # This avoids propagating None/0 as a valid timestamp
+            created_at = profile_data.get("last_updated") or int(time.time())
 
             # Generate a unique event ID (simplified approach)
             event_id = hashlib.sha256(
