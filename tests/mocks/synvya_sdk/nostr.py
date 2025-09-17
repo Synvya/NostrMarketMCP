@@ -3,6 +3,42 @@
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 
+class NostrKeys:
+    """Mock NostrKeys class."""
+
+    def __init__(self, nsec: str):
+        self.nsec = nsec
+
+
+class Profile:
+    """Mock Profile class."""
+
+    pass
+
+
+class ProfileFilter:
+    """Mock ProfileFilter class."""
+
+    pass
+
+
+class ProfileType:
+    """Mock ProfileType class."""
+
+    pass
+
+
+class Namespace:
+    """Mock Namespace class."""
+
+    pass
+
+
+def generate_keys(key_name: str, env_file: str) -> NostrKeys:
+    """Mock generate_keys function."""
+    return NostrKeys("mock_nsec")
+
+
 class NostrClient:
     """Mock NostrClient for testing."""
 

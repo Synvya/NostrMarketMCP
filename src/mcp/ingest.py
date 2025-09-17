@@ -5,6 +5,7 @@ Subscribes to Nostr events and writes them to the database.
 
 import asyncio
 import logging
+import os
 import sys
 from typing import Callable, List, Optional, Set
 
@@ -12,7 +13,7 @@ from typing import Callable, List, Optional, Set
 try:
     from synvya_sdk.nostr import NostrClient
 except ImportError:
-    if "pytest" in sys.modules:
+    if "pytest" in sys.modules or os.getenv("ENVIRONMENT") == "test":
         from tests.mocks.synvya_sdk.nostr import NostrClient
     else:
         raise

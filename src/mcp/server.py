@@ -9,6 +9,7 @@ This server implements MCP over HTTP with JSON-RPC and Server-Sent Events.
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -36,7 +37,7 @@ try:
         generate_keys,
     )
 except ImportError:
-    if "pytest" in sys.modules:
+    if "pytest" in sys.modules or os.getenv("ENVIRONMENT") == "test":
         from tests.mocks.synvya_sdk.nostr import NostrClient
     else:
         raise
