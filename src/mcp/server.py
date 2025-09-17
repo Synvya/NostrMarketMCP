@@ -27,6 +27,7 @@ from src.core.shared_database import (
     close_shared_database,
     get_shared_database,
     initialize_shared_database,
+    refresh_shared_database,
 )
 
 # Try to import from the real SDK, fall back to mocks for testing
@@ -247,7 +248,7 @@ async def initialize_db():
         return
 
     # MCP server-specific initialization: initial refresh and periodic task
-    await refresh_database()  # Initial refresh at startup
+    await refresh_shared_database()  # Initial refresh at startup
     await start_refresh_task()  # Start periodic refresh
 
 
@@ -354,7 +355,7 @@ async def tool_refresh_profiles_from_nostr(arguments: Dict[str, Any]) -> Dict[st
     db = await get_shared_database()
 
     try:
-        await refresh_database()
+        await refresh_shared_database()
         stats = await db.get_profile_stats()
         return {
             "success": True,
@@ -667,129 +668,7 @@ async def health_check():
     }
 
 
-# Include the refresh database and other utility functions from the original server
-async def refresh_database():
-    """Refresh the database with new Nostr profile data."""
-    global nostr_client
-
-    # Get the shared database instance
-    db = await get_shared_database()
-    all_profiles: set[Profile] = set()
-
-    try:
-        logger.info("Refreshing database with new Nostr profile data...")
-
-        # Connect to Nostr relays if not already connected
-        if nostr_client is None:
-            logger.debug(f"Connecting to relays: {DEFAULT_RELAYS}")
-            try:
-                nostr_client = await NostrClient.create(
-                    DEFAULT_RELAYS, keys.get_private_key()
-                )
-                logger.info(f"Connected to {len(DEFAULT_RELAYS)} Nostr relays")
-            except Exception as e:
-                logger.error(f"Failed to create NostrClient: {e}")
-                raise
-
-        # Define all business types to search for
-        business_types = [
-            ProfileType.RETAIL,
-            ProfileType.RESTAURANT,
-            ProfileType.SERVICE,
-            ProfileType.BUSINESS,
-            ProfileType.ENTERTAINMENT,
-            ProfileType.OTHER,
-        ]
-
-        try:
-            # Search for profiles with each business type
-            for business_type in business_types:
-                logger.debug(f"Searching for {business_type.value} profiles...")
-                profile_filter = ProfileFilter(
-                    namespace=Namespace.BUSINESS_TYPE,
-                    profile_type=business_type,
-                )
-                profiles = await nostr_client.async_get_merchants(profile_filter)
-                if profiles is not None:
-                    all_profiles.update(profiles)
-                    logger.debug(
-                        f"Found {len(profiles)} {business_type.value} profiles"
-                    )
-                    for profile in profiles:
-                        logger.debug(f"Profile: {profile.to_json()}")
-
-            logger.info(
-                f"Total unique profiles found across all business types: {len(all_profiles)}"
-            )
-
-        except Exception as e:
-            logger.error("Failed to get merchants: %s", e)
-            raise
-
-        # Store the profiles in the database
-        logger.debug(f"Found {len(all_profiles)} business profiles to store")
-        profile_count = 0
-
-        # Update database with profile information
-        for profile in all_profiles:
-            try:
-                # Use the Profile's built-in to_dict() method which handles set serialization
-                profile_data = profile.to_dict()
-
-                # Add additional fields needed by the database
-                profile_data["public_key"] = profile.get_public_key("hex")
-                profile_data["business_type"] = (
-                    profile.profile_type.value if profile.profile_type else None
-                )
-                profile_data["tags"] = getattr(profile, "tags", [])
-                profile_data["created_at"] = profile.get_created_at()
-                profile_data["last_updated"] = profile.get_created_at()
-
-                pubkey = profile_data["public_key"]
-                new_created_at = profile_data["created_at"]
-
-                # Check if profile already exists in database
-                resource_uri = f"nostr://{pubkey}/profile"
-                existing_profile = await db.get_resource_data(resource_uri)
-
-                should_update = True
-                if existing_profile:
-                    # Get existing created_at from the database
-                    existing_created_at = existing_profile.get("created_at", 0)
-
-                    if new_created_at == existing_created_at:
-                        # Same timestamp, skip update
-                        should_update = False
-                        logger.debug(
-                            f"Skipping profile {profile.get_name()} - same created_at timestamp"
-                        )
-                    elif new_created_at <= existing_created_at:
-                        # New profile is older or same age, skip update
-                        should_update = False
-                        logger.debug(
-                            f"Skipping profile {profile.get_name()} - existing profile is newer"
-                        )
-
-                if should_update:
-                    # Store profile data
-                    result = await db.upsert_profile(profile_data)
-                    if result:
-                        profile_count += 1
-                        action = "Updated" if existing_profile else "Stored"
-                        logger.debug(
-                            f"{action} profile for {profile.get_name()} ({pubkey[:8]}...)"
-                        )
-                    else:
-                        logger.warning(f"Failed to store profile for {pubkey[:8]}...")
-            except Exception as e:
-                logger.error(
-                    f"Error processing profile {profile.get_public_key('hex')[:8]}: {e}"
-                )
-
-        logger.debug(f"Successfully stored {profile_count} profiles in the database")
-
-    except Exception as e:
-        logger.error(f"Error refreshing database: {e}")
+# MCP server now uses the shared refresh function from src.core.shared_database
 
 
 async def start_refresh_task():
@@ -800,7 +679,7 @@ async def start_refresh_task():
         """Periodic refresh loop."""
         while True:
             try:
-                await refresh_database()
+                await refresh_shared_database()
                 logger.info(f"Next refresh in {REFRESH_INTERVAL} seconds")
                 await asyncio.sleep(REFRESH_INTERVAL)
             except asyncio.CancelledError:

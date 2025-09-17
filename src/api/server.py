@@ -28,6 +28,7 @@ from src.core.shared_database import (
     cleanup_shared_database,
     get_shared_database,
     initialize_shared_database,
+    refresh_shared_database,
 )
 
 from .security import (
@@ -895,9 +896,8 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
     try:
         logger.info("Manual refresh triggered")
 
-        # For API server, we'll skip the automatic refresh for now
-        # Individual refresh endpoints can be used as needed
-        logger.info("Manual refresh endpoint called - skipping automatic refresh")
+        # Use the shared refresh function to actually fetch and populate data
+        await refresh_shared_database()
 
         stats = await database.get_profile_stats()
         logger.info(f"Manual refresh completed: {stats}")
@@ -994,20 +994,35 @@ async def startup_event():
     # Initialize database
     await get_database()
 
-    # Start automatic refresh every hour (unless disabled for testing)
+    # Initialize shared database and populate with data if needed
     if not os.getenv("DISABLE_BACKGROUND_TASKS"):
         try:
             await initialize_shared_database()
-            logger.info(
-                "Automatic refresh enabled: profiles will be refreshed every hour"
-            )
+
+            # Check if database is empty and populate it
+            database = await get_database()
+            stats = await database.get_profile_stats()
+
+            if stats.get("total_profiles", 0) == 0:
+                logger.info("Database is empty - populating with initial data...")
+                try:
+                    await refresh_shared_database()
+                    new_stats = await database.get_profile_stats()
+                    logger.info(f"Initial data population completed: {new_stats}")
+                except Exception as e:
+                    logger.warning(f"Failed to populate initial data: {e}")
+                    logger.info(
+                        "Database will remain empty - use /api/refresh to populate manually"
+                    )
+            else:
+                logger.info(f"Database already contains data: {stats}")
+
+            logger.info("API server database initialization completed")
         except Exception as e:
-            logger.warning(f"Failed to enable automatic refresh: {e}")
+            logger.warning(f"Failed to initialize database: {e}")
             logger.info("Manual refresh will still be available via /api/refresh")
     else:
-        logger.info(
-            "Background tasks disabled - skipping automatic refresh initialization"
-        )
+        logger.info("Background tasks disabled - skipping database initialization")
 
 
 @app.on_event("shutdown")
