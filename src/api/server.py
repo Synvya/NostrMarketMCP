@@ -216,7 +216,7 @@ class ChatService:
         self.functions = [
             {
                 "name": "search_profiles",
-                "description": "Search for Nostr profiles by content including names, descriptions, hashtags, and locations",
+                "description": "Search for ALL Nostr profiles including businesses, individuals, and any type of profile. Use this as the primary search function for any query unless you need to filter by a specific business type.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -237,7 +237,7 @@ class ChatService:
             },
             {
                 "name": "search_business_profiles",
-                "description": "Search for business profiles filtered by business type",
+                "description": "Search ONLY business profiles that have been specifically tagged with business types. Only use this function when the user explicitly wants to filter by business type (retail, restaurant, service, business, entertainment, other). For general searches including businesses, use search_profiles instead.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -255,7 +255,7 @@ class ChatService:
                                 "entertainment",
                                 "other",
                             ],
-                            "description": "Business type to filter by",
+                            "description": "Business type to filter by - only use when user specifically requests filtering by business type",
                         },
                         "limit": {
                             "type": "integer",
@@ -460,7 +460,19 @@ class ChatService:
                 0,
                 {
                     "role": "system",
-                    "content": """You MUST call the search tools before answering any query about businesses, places, products, or services.\nIf a search returns zero results, broaden or adjust parameters and try again once. Only after two failed searches may you apologize.\nAlways deduplicate duplicates (prefer environment="production").""",
+                    "content": """You MUST call the search tools before answering any query about businesses, places, products, or services.
+
+IMPORTANT: Use search_profiles as your primary search function for ALL queries including businesses, breweries, restaurants, etc. Only use search_business_profiles when the user specifically asks to filter by business type (retail, restaurant, service, business, entertainment, other).
+
+CRITICAL MATCHING RULES:
+- When a user asks for a specific business type AND location (e.g., "brewery in Snoqualmie"), you MUST find results that match BOTH criteria
+- Do NOT return a different business type in the right location (e.g., camera shop in Snoqualmie for brewery query)
+- Do NOT return the right business type in a different location (e.g., brewery in Seattle for Snoqualmie query)
+- If no exact matches exist for both criteria, clearly state that no matching businesses were found in that location
+- Only suggest alternatives if the user specifically asks for them
+
+If a search returns zero results, broaden or adjust parameters and try again once. Only after two failed searches may you apologize.
+Always deduplicate duplicates (prefer environment="production").""",
                 },
             )
 
@@ -563,65 +575,9 @@ class ChatService:
             # ---- No tool call: maybe final answer ----
             final_content = get_msg_content(msg)
 
-            # Safeguard: if first round & query smells like a search, force one search
-            if round_idx == 0:
-                user_msg = next(
-                    (m for m in reversed(convo) if m["role"] == "user"), None
-                )
-                user_text = (user_msg or {}).get("content", "").lower()
-                keywords = [
-                    "find",
-                    "search",
-                    "coffee",
-                    "near",
-                    "restaurant",
-                    "shop",
-                    "business",
-                    "in ",
-                ]
-                if any(k in user_text for k in keywords):
-                    forced_args = {"query": user_text, "limit": 10}
-                    forced_result = await self.call_function(
-                        "search_profiles", forced_args
-                    )
-                    # update hit flag based on forced search
-                    if (
-                        isinstance(forced_result, dict)
-                        and forced_result.get("count", 0) > 0
-                    ):
-                        had_hits_any = True
-                    append_trace(
-                        {
-                            "forced_tool": "search_profiles",
-                            "args": forced_args,
-                            "result_keys": list(forced_result.keys()),
-                        }
-                    )
-                    convo.append(
-                        {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "forced-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "search_profiles",
-                                        "arguments": json.dumps(forced_args),
-                                    },
-                                }
-                            ],
-                        }
-                    )
-                    convo.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": "forced-1",
-                            "name": "search_profiles",
-                            "content": json.dumps(forced_result),
-                        }
-                    )
-                    continue
+            # Let OpenAI naturally choose the right function based on improved descriptions
+            # The forced search logic has been removed to avoid hardcoded keywords
+            # and rely on better function descriptions and system messages
 
             # Consistency check: if we had hits, ask the model to ensure it used them
             # Use the outer-scope flag directly
