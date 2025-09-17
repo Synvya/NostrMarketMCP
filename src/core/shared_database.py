@@ -65,6 +65,22 @@ async def close_shared_database():
         logger.info("Shared database closed")
 
 
+async def cleanup_shared_database():
+    """Cleanup shared database resources."""
+    await close_shared_database()
+
+
+async def initialize_shared_database(db_path: Optional[Path] = None):
+    """Initialize the shared database connection.
+
+    Args:
+        db_path: Optional custom database path
+    """
+    # Get the shared database instance - this will create it if it doesn't exist
+    await get_shared_database(db_path)
+    logger.info("Shared database initialized")
+
+
 def is_database_initialized() -> bool:
     """Check if the shared database is initialized."""
     return _shared_db is not None

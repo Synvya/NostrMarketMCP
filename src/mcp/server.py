@@ -15,15 +15,19 @@ import time
 from contextlib import asynccontextmanager
 from os import getenv
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from src.core import Database
-from src.core.shared_database import close_shared_database, get_shared_database
+from src.core.shared_database import (
+    cleanup_shared_database,
+    close_shared_database,
+    get_shared_database,
+    initialize_shared_database,
+)
 
 # Try to import from the real SDK, fall back to mocks for testing
 try:
@@ -232,9 +236,9 @@ AVAILABLE_RESOURCES = [
 
 
 async def initialize_db():
-    """Initialize the shared database connection."""
-    # Get the shared database instance - this will create it if it doesn't exist
-    await get_shared_database()
+    """Initialize the MCP server with database and refresh tasks."""
+    # Initialize the shared database (no refresh callback - pure database initialization)
+    await initialize_shared_database()
     logger.info("MCP server using shared database instance")
 
     # Skip network operations in test environment
@@ -242,17 +246,17 @@ async def initialize_db():
         logger.info("Test environment detected - skipping network operations")
         return
 
-    # Only run initial refresh and start periodic task when first creating the database
+    # MCP server-specific initialization: initial refresh and periodic task
     await refresh_database()  # Initial refresh at startup
     await start_refresh_task()  # Start periodic refresh
 
 
 async def cleanup_db():
-    """Cleanup database connection."""
-    # Stop refresh task first
+    """Cleanup MCP server resources."""
+    # Stop MCP-specific refresh task first
     await stop_refresh_task()
-    # Close the shared database
-    await close_shared_database()
+    # Clean up shared database
+    await cleanup_shared_database()
 
 
 async def ensure_db_initialized():

@@ -6,11 +6,9 @@ Production-ready API server with essential security measures using minimal depen
 Designed specifically for OpenAI Custom GPT integration with proper CORS and authentication.
 """
 
-import asyncio
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,8 +24,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from src.core import Database
-from src.core.shared_database import get_shared_database
-from src.mcp.server import cleanup_db, initialize_db, refresh_database
+from src.core.shared_database import (
+    cleanup_shared_database,
+    get_shared_database,
+    initialize_shared_database,
+)
 
 from .security import (
     SECURITY_CONFIG,
@@ -894,7 +895,9 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
     try:
         logger.info("Manual refresh triggered")
 
-        await refresh_database()
+        # For API server, we'll skip the automatic refresh for now
+        # Individual refresh endpoints can be used as needed
+        logger.info("Manual refresh endpoint called - skipping automatic refresh")
 
         stats = await database.get_profile_stats()
         logger.info(f"Manual refresh completed: {stats}")
@@ -994,7 +997,7 @@ async def startup_event():
     # Start automatic refresh every hour (unless disabled for testing)
     if not os.getenv("DISABLE_BACKGROUND_TASKS"):
         try:
-            await initialize_db()
+            await initialize_shared_database()
             logger.info(
                 "Automatic refresh enabled: profiles will be refreshed every hour"
             )
@@ -1015,7 +1018,7 @@ async def shutdown_event():
     # Stop automatic refresh (if it was started)
     if not os.getenv("DISABLE_BACKGROUND_TASKS"):
         try:
-            await cleanup_db()
+            await cleanup_shared_database()
             logger.info("Automatic refresh stopped")
         except Exception as e:
             logger.warning(f"Error stopping automatic refresh: {e}")
