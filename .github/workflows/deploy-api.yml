@@ -38,9 +38,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          curl -L -o ecr-helper.deb \
-            https://github.com/awslabs/amazon-ecr-credential-helper/releases/download/v0.7.1/amazon-ecr-credential-helper_0.7.1_amd64.deb
-          sudo dpkg -i ecr-helper.deb
+          sudo apt-get install -y amazon-ecr-credential-helper
 
       - name: Configure Docker to use ECR credential helper
         run: |
