@@ -9,7 +9,7 @@ on:
 
 env:
   IMAGE_TAG: ${{ github.ref_name }}
-  
+
 jobs:
   deploy:
     name: Build and Deploy Container
@@ -17,63 +17,82 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+      # Compute ECR registry (ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com)
+      - name: Compute ECR registry
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com" >> "$GITHUB_ENV"
+
+      # Install and configure the Amazon ECR Docker credential helper (kills the plaintext password warning)
+      - name: Install ECR credential helper
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          curl -L -o ecr-helper.deb \
+            https://github.com/awslabs/amazon-ecr-credential-helper/releases/download/v0.7.1/amazon-ecr-credential-helper_0.7.1_amd64.deb
+          sudo dpkg -i ecr-helper.deb
+
+      - name: Configure Docker to use ECR credential helper
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.docker
+          printf '{ "credsStore": "ecr-login" }\n' > ~/.docker/config.json
 
       - name: Build, tag, and push Docker image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          docker build -f Dockerfile-api -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-      
-      - name: Logout from Docker
-        run: docker logout
-      
+          set -euxo pipefail
+          docker build --progress=plain -f Dockerfile-api -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
       - name: Update task definition with new image URI
+        env:
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
         run: |
-          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          jq --arg IMAGE_URI "$IMAGE_URI" --arg CONTAINER_NAME "${{ secrets.CONTAINER_NAME }}" \
+          set -euo pipefail
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          jq --arg IMAGE_URI "$IMAGE_URI" --arg CONTAINER_NAME "$CONTAINER_NAME" \
             '.containerDefinitions |= map(if .name == $CONTAINER_NAME then .image = $IMAGE_URI else . end)' \
             task-definition.json > new-task-def.json
 
       - name: Register new task definition
         id: register-task
         run: |
+          set -euo pipefail
           TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://new-task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
-          echo "task_def_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+          echo "task_def_arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to ECS service
         run: |
+          set -euo pipefail
           aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --service ${{ secrets.ECS_SERVICE }} \
-            --task-definition ${{ steps.register-task.outputs.task_def_arn }} \
+            --cluster "${{ secrets.ECS_CLUSTER }}" \
+            --service "${{ secrets.ECS_SERVICE }}" \
+            --task-definition "${{ steps.register-task.outputs.task_def_arn }}" \
             --force-new-deployment
 
       - name: Wait for deployment to complete
         run: |
+          set -euo pipefail
           aws ecs wait services-stable \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }}
-
-      - name: Verify deployment
-        run: |
-          echo "Deployment completed successfully!"
-          echo "New task definition: ${{ steps.register-task.outputs.task_def_arn }}"
-          echo "Image deployed: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+            --cluster "${{ secrets.ECS_CLUSTER }}" \
+            --services "${{ secrets.ECS_SERVICE }}"
