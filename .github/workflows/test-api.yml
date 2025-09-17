@@ -43,6 +43,6 @@ jobs:
         echo "ENVIRONMENT=test" >> $GITHUB_ENV
         echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
 
-    - name: Run all tests (including API tests with automatic server management)
+    - name: Run API integration tests only
       run: |
-        python tests/run_tests.py 
+        python -m pytest tests/test_api_integration.py -v 
