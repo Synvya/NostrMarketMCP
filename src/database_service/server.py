@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Nostr Profiles Database Service
 
@@ -22,22 +23,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Try to import from the real SDK, fall back to mocks for testing
-try:
-    from synvya_sdk import (
-        Namespace,
-        NostrClient,
-        NostrKeys,
-        Profile,
-        ProfileFilter,
-        ProfileType,
-        generate_keys,
-    )
-except ImportError:
-    if "pytest" in sys.modules or os.getenv("ENVIRONMENT") == "test":
-        from tests.mocks.synvya_sdk.nostr import NostrClient
-    else:
-        raise
+# Import the real SDK explicitly; fail fast if unavailable
+from synvya_sdk import NostrClient, generate_keys
+from synvya_sdk.models import (
+    Namespace,
+    NostrKeys,
+    Profile,
+    ProfileFilter,
+    ProfileType,
+)
 
 from .database import Database
 

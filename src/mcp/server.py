@@ -24,20 +24,14 @@ from fastapi.responses import StreamingResponse
 
 from .database_client import close_mcp_database_client, get_mcp_database_client
 
-# Try to import from the real SDK, fall back to mocks for testing
-try:
-    from synvya_sdk import (
-        Namespace,
-        NostrClient,
-        NostrKeys,
-        Profile,
-        ProfileFilter,
-        ProfileType,
-        generate_keys,
-    )
-except ImportError:
-    if "pytest" in sys.modules or os.getenv("ENVIRONMENT") == "test":
-        from tests.mocks.synvya_sdk.nostr import NostrClient
+# Import the real SDK explicitly; fail fast if unavailable
+from synvya_sdk import NostrClient, NostrKeys, generate_keys
+from synvya_sdk.models import (
+    Namespace,
+    Profile,
+    ProfileFilter,
+    ProfileType,
+)
     else:
         raise
 
