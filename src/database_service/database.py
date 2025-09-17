@@ -782,7 +782,7 @@ class Database:
                 "SELECT MAX(created_at) FROM events WHERE kind = 0"
             ) as cursor:
                 row = await cursor.fetchone()
-                stats["last_updated"] = row[0] if row and row[0] else None
+                stats["last_updated"] = row[0] if row and row[0] else 0
 
             return stats
         except sqlite3.Error as e:

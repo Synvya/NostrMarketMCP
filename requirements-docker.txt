@@ -22,8 +22,9 @@ synvya-sdk
 # Environment and configuration management
 python-dotenv
 
-# HTTP client for health checks
+# HTTP client for health checks and database service communication
 httpx
+aiohttp
 
 # Note: safety excluded for Docker container due to pydantic version conflicts
 # Use 'pip install safety' manually for local development security audits 

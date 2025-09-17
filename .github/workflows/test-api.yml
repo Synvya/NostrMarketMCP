@@ -9,11 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    services:
-      # Add any required services here (e.g., databases)
-      pass:
-        image: hello-world
 
     steps:
     - uses: actions/checkout@v4
@@ -36,13 +31,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-asyncio pytest-mock
-    
-    - name: Set environment variables
-      run: |
-        echo "API_KEY=test_api_key_ci" >> $GITHUB_ENV
-        echo "ENVIRONMENT=test" >> $GITHUB_ENV
-        echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
 
-    - name: Run API integration tests only
+    - name: Run API service local tests (spins up services)
+      env:
+        API_KEY: test_api_key_ci
+        ENVIRONMENT: test
+        PYTHONPATH: ${{ github.workspace }}
       run: |
-        python -m pytest tests/test_api_integration.py -v 
+        bash tests/run_api_local_tests.sh
