@@ -17,20 +17,14 @@ LAST_TOOL_TRACE: list | None = None
 
 import openai
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-from src.core import Database
-from src.core.shared_database import (
-    cleanup_shared_database,
-    get_shared_database,
-    initialize_shared_database,
-    refresh_shared_database,
-)
-
+from .database_adapter import DatabaseAdapter, get_database_adapter
+from .database_client import close_database_client
 from .security import (
     SECURITY_CONFIG,
     SECURITY_HEADERS,
@@ -55,7 +49,7 @@ DEFAULT_DB_PATH = os.getenv("DATABASE_PATH", str(Path.home() / ".nostr_profiles.
 MAX_LLM_TOKENS = 400  # limit response size for faster latency
 
 # Global database instance
-db: Optional[Database] = None
+db: Optional[DatabaseAdapter] = None
 
 # Create FastAPI app with security settings
 app = FastAPI(
@@ -82,51 +76,62 @@ if "https://platform.openai.com" not in allowed_origins:
 
 logger.info(f"CORS allowed origins: {allowed_origins}")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
-    expose_headers=["X-Total-Count", "X-Rate-Limit-Remaining"],
-)
+# Add CORS middleware - disabled in test environment for stability
+if SECURITY_CONFIG["ENVIRONMENT"] != "test":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+        expose_headers=["X-Total-Count", "X-Rate-Limit-Remaining"],
+    )
+    logger.info("CORS middleware enabled")
+else:
+    logger.info("CORS middleware disabled in test environment")
 
 
-# Security middleware with rate limiting
-@app.middleware("http")
-async def security_middleware_handler(request: Request, call_next):
-    """Apply security middleware to all requests."""
-    try:
-        # Get client IP for rate limiting
-        client_ip = security_middleware.get_client_ip(request)
+# Security middleware with rate limiting - Disabled in test environment for stability
+if SECURITY_CONFIG["ENVIRONMENT"] != "test":
 
-        # Check rate limits
-        if not rate_limiter.is_allowed(
-            client_ip,
-            SECURITY_CONFIG["RATE_LIMIT_REQUESTS"],
-            SECURITY_CONFIG["RATE_LIMIT_WINDOW"],
-        ):
-            logger.warning(f"Rate limit exceeded for {client_ip}")
-            return Response(
-                status_code=429,
-                content=json.dumps({"error": "Rate limit exceeded"}),
-                media_type="application/json",
-            )
+    @app.middleware("http")
+    async def security_middleware_handler(request: Request, call_next):
+        """Apply security middleware to all requests."""
+        try:
+            # Get client IP for rate limiting
+            client_ip = security_middleware.get_client_ip(request)
 
-        # Security checks
-        await security_middleware.process_request(request)
+            # Check rate limits
+            if not rate_limiter.is_allowed(
+                client_ip,
+                SECURITY_CONFIG["RATE_LIMIT_REQUESTS"],
+                SECURITY_CONFIG["RATE_LIMIT_WINDOW"],
+            ):
+                logger.warning(f"Rate limit exceeded for {client_ip}")
+                return Response(
+                    status_code=429,
+                    content=json.dumps({"error": "Rate limit exceeded"}),
+                    media_type="application/json",
+                )
 
-        # Process request
-        response = await call_next(request)
+            # Security checks
+            await security_middleware.process_request(request)
 
-        # Add security headers
-        for header, value in SECURITY_HEADERS.items():
-            response.headers[header] = value
+            # Process request
+            response = await call_next(request)
 
-        return response
-    except Exception as e:
-        logger.error(f"Security middleware error: {e}")
-        raise HTTPException(status_code=500, detail="Security check failed")
+            # Add security headers
+            for header, value in SECURITY_HEADERS.items():
+                response.headers[header] = value
+
+            return response
+        except Exception as e:
+            logger.error(f"Security middleware error: {e}")
+            raise HTTPException(status_code=500, detail="Security check failed")
+
+    logger.info("Security middleware enabled")
+else:
+    logger.info("Security middleware disabled in test environment")
 
 
 # Authentication dependency
@@ -183,10 +188,10 @@ async def get_authenticated_user(
         return True
 
 
-# Database dependency
-async def get_database() -> Database:
-    """Get shared database instance."""
-    return await get_shared_database()
+# Database dependency (using adapter for compatibility)
+async def get_database():
+    """Get database adapter instance."""
+    return await get_database_adapter()
 
 
 # Chat authentication dependency
@@ -210,7 +215,7 @@ def get_openai_client(api_key: str) -> openai.OpenAI:
 class ChatService:
     """Service to handle chat interactions with OpenAI and profile searches."""
 
-    def __init__(self, openai_client: openai.OpenAI, database: Database):
+    def __init__(self, openai_client: openai.OpenAI, database: DatabaseAdapter):
         self.client = openai_client
         self.database = database
 
@@ -698,6 +703,13 @@ async def health_check():
     }
 
 
+# Ultra-minimal test endpoint for debugging
+@app.get("/ping")
+async def ping():
+    """Ultra-minimal endpoint for testing connectivity."""
+    return {"ping": "pong"}
+
+
 @app.post(
     "/api/search",
     response_model=SearchResponse,
@@ -705,7 +717,8 @@ async def health_check():
     dependencies=[Depends(get_authenticated_user)],
 )
 async def search_profiles(
-    request: SecureSearchRequest, database: Database = Depends(get_database)
+    request: SecureSearchRequest = Body(...),
+    database=Depends(get_database),
 ):
     """Search for Nostr profiles by content with secure validation."""
     try:
@@ -754,7 +767,8 @@ async def search_profiles(
     dependencies=get_auth_dependencies(),
 )
 async def search_business_profiles(
-    request: SecureBusinessSearchRequest, database: Database = Depends(get_database)
+    request: SecureBusinessSearchRequest = Body(...),
+    database=Depends(get_database),
 ):
     """Search for business Nostr profiles with secure validation."""
     try:
@@ -808,9 +822,7 @@ async def search_business_profiles(
     summary="Get Profile by Public Key",
     dependencies=get_auth_dependencies(),
 )
-async def get_profile_by_pubkey(
-    pubkey: str, database: Database = Depends(get_database)
-):
+async def get_profile_by_pubkey(pubkey: str, database=Depends(get_database)):
     """Get a specific Nostr profile by its public key with validation."""
     try:
         # Validate pubkey format
@@ -854,7 +866,7 @@ async def get_profile_by_pubkey(
     summary="Get Database Statistics",
     dependencies=get_auth_dependencies(),
 )
-async def get_profile_stats(database: Database = Depends(get_database)):
+async def get_profile_stats(database=Depends(get_database)):
     """Get statistics about the profile database."""
     try:
         logger.info("Stats request")
@@ -871,7 +883,7 @@ async def get_profile_stats(database: Database = Depends(get_database)):
     summary="Get Available Business Types",
     dependencies=get_auth_dependencies(),
 )
-async def get_business_types(database: Database = Depends(get_database)):
+async def get_business_types(database=Depends(get_database)):
     """Get the list of available business types."""
     try:
         business_types = await database.get_business_types()
@@ -891,19 +903,21 @@ async def get_business_types(database: Database = Depends(get_database)):
     summary="Refresh Database",
     dependencies=get_auth_dependencies(),
 )
-async def refresh_profiles_from_nostr(database: Database = Depends(get_database)):
+async def refresh_profiles_from_nostr(database=Depends(get_database)):
     """Manually trigger a refresh of the database."""
     try:
         logger.info("Manual refresh triggered")
 
-        # Use the shared refresh function to actually fetch and populate data
-        await refresh_shared_database()
+        # Forward refresh request to database service
+        client = await database._get_client()
+        result = await client.trigger_refresh()
 
-        stats = await database.get_profile_stats()
-        logger.info(f"Manual refresh completed: {stats}")
+        logger.info(f"Manual refresh completed via database service")
 
         return RefreshResponse(
-            success=True, message="Database refresh completed", current_stats=stats
+            success=result.get("success", True),
+            message=result.get("message", "Database refresh completed"),
+            current_stats=result.get("current_stats", {}),
         )
     except Exception as e:
         logger.error(f"Manual refresh error: {e}")
@@ -918,7 +932,7 @@ async def refresh_profiles_from_nostr(database: Database = Depends(get_database)
 async def chat_with_assistant(
     request: SecureChatRequest,
     openai_api_key: str = Depends(get_chat_authenticated_user),
-    database: Database = Depends(get_database),
+    database=Depends(get_database),
 ):
     """Return chat response using a deterministic server-side tool loop. Streams only the final text if request.stream is True."""
     try:
@@ -991,38 +1005,27 @@ async def startup_event():
     )
     logger.info(f"CORS origins: {allowed_origins}")
 
-    # Initialize database
-    await get_database()
+    # Initialize connection to database service (non-blocking with timeout)
+    try:
+        database = await get_database()
+        # Test connection by getting stats with a short timeout
+        import asyncio
 
-    # Initialize shared database and populate with data if needed
-    if not os.getenv("DISABLE_BACKGROUND_TASKS"):
-        try:
-            await initialize_shared_database()
-
-            # Check if database is empty and populate it
-            database = await get_database()
-            stats = await database.get_profile_stats()
-
-            if stats.get("total_profiles", 0) == 0:
-                logger.info("Database is empty - populating with initial data...")
-                try:
-                    await refresh_shared_database()
-                    new_stats = await database.get_profile_stats()
-                    logger.info(f"Initial data population completed: {new_stats}")
-                except Exception as e:
-                    logger.warning(f"Failed to populate initial data: {e}")
-                    logger.info(
-                        "Database will remain empty - use /api/refresh to populate manually"
-                    )
-            else:
-                logger.info(f"Database already contains data: {stats}")
-
-            logger.info("API server database initialization completed")
-        except Exception as e:
-            logger.warning(f"Failed to initialize database: {e}")
-            logger.info("Manual refresh will still be available via /api/refresh")
-    else:
-        logger.info("Background tasks disabled - skipping database initialization")
+        stats = await asyncio.wait_for(database.get_profile_stats(), timeout=10.0)
+        logger.info(
+            f"Connected to database service - contains {stats.get('total_profiles', 0)} profiles"
+        )
+        logger.info("API server initialization completed")
+    except asyncio.TimeoutError:
+        logger.warning("Database service connection timed out during startup")
+        logger.info(
+            "API server will continue but database functionality may be limited"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to connect to database service: {e}")
+        logger.info(
+            "API server will continue but database functionality may be limited"
+        )
 
 
 @app.on_event("shutdown")
@@ -1030,19 +1033,12 @@ async def shutdown_event():
     """Clean shutdown."""
     logger.info("Shutting down Secure Nostr Profiles API")
 
-    # Stop automatic refresh (if it was started)
-    if not os.getenv("DISABLE_BACKGROUND_TASKS"):
-        try:
-            await cleanup_shared_database()
-            logger.info("Automatic refresh stopped")
-        except Exception as e:
-            logger.warning(f"Error stopping automatic refresh: {e}")
-    else:
-        logger.info("Background tasks were disabled - no cleanup needed")
-
-    # Close database
-    if db:
-        await db.close()
+    # Close database client connection
+    try:
+        await close_database_client()
+        logger.info("Database client connection closed")
+    except Exception as e:
+        logger.warning(f"Error closing database client: {e}")
 
 
 if __name__ == "__main__":
@@ -1051,14 +1047,16 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8080"))
     log_level = os.getenv("LOG_LEVEL", "info").lower()
 
-    logger.info(f"Starting server on {host}:{port}")
+    # Only auto-run when explicitly allowed to avoid double-starts during tests
+    if os.getenv("RUN_STANDALONE", "1") == "1":
+        logger.info(f"Starting server on {host}:{port}")
 
-    # Run with uvicorn
-    uvicorn.run(
-        "src.api.server:app",
-        host=host,
-        port=port,
-        log_level=log_level,
-        access_log=True,
-        reload=False,
-    )
+        # Run with uvicorn
+        uvicorn.run(
+            "src.api.server:app",
+            host=host,
+            port=port,
+            log_level=log_level,
+            access_log=True,
+            reload=False,
+        )

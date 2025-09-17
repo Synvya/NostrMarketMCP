@@ -244,12 +244,16 @@ rate_limiter = SimpleRateLimiter()
 class SecureSearchRequest(BaseModel):
     """Secure search request model."""
 
-    query: str = Field(..., min_length=1, max_length=200)
+    # Require field presence but allow empty string
+    query: str = Field(..., min_length=0, max_length=200)
     limit: int = Field(default=10, ge=1, le=100)
 
     @field_validator("query")
     @classmethod
     def validate_query(cls, v):
+        # Permit empty query and skip strict checks in that case
+        if v == "":
+            return ""
         return InputValidator.validate_search_query(v)
 
 

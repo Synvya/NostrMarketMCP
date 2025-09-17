@@ -1,0 +1,97 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "nostr-api",
+            "image": "122610503853.dkr.ecr.us-east-1.amazonaws.com/nostr-profiles-api:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 8080,
+                    "hostPort": 8080,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "ALLOWED_ORIGINS",
+                    "value": "https://platform.openai.com,https://synvya.com"
+                },
+                {
+                    "name": "RATE_LIMIT_REQUESTS",
+                    "value": "100"
+                },
+                {
+                    "name": "PORT",
+                    "value": "8080"
+                },
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "production"
+                },
+                {
+                    "name": "HOST",
+                    "value": "0.0.0.0"
+                },
+                {
+                    "name": "RATE_LIMIT_WINDOW",
+                    "value": "60"
+                },
+                {
+                    "name": "LOG_LEVEL",
+                    "value": "info"
+                },
+                {
+                    "name": "DATABASE_SERVICE_URL",
+                    "value": "http://nostr-database.nostr-profiles.local:8082"
+                }
+            ],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "secrets": [
+                {
+                    "name": "API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:API_KEY::"
+                },
+                {
+                    "name": "BEARER_TOKEN",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:BEARER_TOKEN::"
+                },
+                {
+                    "name": "OPENAI_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:OPENAI_API_KEY::"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/nostr-profiles-api",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8080/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 60
+            },
+            "systemControls": []
+        }
+    ],
+    "family": "nostr-api",
+    "taskRoleArn": "arn:aws:iam::122610503853:role/ecsTaskRole",
+    "executionRoleArn": "arn:aws:iam::122610503853:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "volumes": [],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024"
+}

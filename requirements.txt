@@ -26,8 +26,9 @@ openai
 # Environment and configuration management
 python-dotenv
 
-# HTTP client for health checks
+# HTTP client for health checks and database service communication
 httpx
+aiohttp
 
 # Security auditing
 safety 

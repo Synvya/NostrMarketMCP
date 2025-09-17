@@ -1,0 +1,94 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "nostr-database",
+            "image": "122610503853.dkr.ecr.us-east-1.amazonaws.com/nostr-profiles-database:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 8082,
+                    "hostPort": 8082,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "PORT",
+                    "value": "8082"
+                },
+                {
+                    "name": "DATABASE_PATH",
+                    "value": "/app/data/nostr_profiles.db"
+                },
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "production"
+                },
+                {
+                    "name": "HOST",
+                    "value": "0.0.0.0"
+                },
+                {
+                    "name": "LOG_LEVEL",
+                    "value": "info"
+                }
+            ],
+            "mountPoints": [
+                {
+                    "sourceVolume": "database-storage",
+                    "containerPath": "/app/data",
+                    "readOnly": false
+                }
+            ],
+            "volumesFrom": [],
+            "secrets": [
+                {
+                    "name": "NOSTR_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:122610503853:secret:nostr-api/credentials:NOSTR_KEY::"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/nostr-profiles-database",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8082/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 120
+            },
+            "systemControls": []
+        }
+    ],
+    "family": "nostr-database",
+    "taskRoleArn": "arn:aws:iam::122610503853:role/ecsTaskRole",
+    "executionRoleArn": "arn:aws:iam::122610503853:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "volumes": [
+        {
+            "name": "database-storage",
+            "efsVolumeConfiguration": {
+                "fileSystemId": "fs-0123456789abcdef0",
+                "transitEncryption": "ENABLED",
+                "authorizationConfig": {
+                    "accessPointId": "fsap-0123456789abcdef0"
+                }
+            }
+        }
+    ],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "1024",
+    "memory": "2048"
+}
