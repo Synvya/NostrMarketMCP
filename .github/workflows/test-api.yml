@@ -5,6 +5,13 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  # Allow manual runs on any branch from the Actions tab
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running this workflow? (optional)"
+        required: false
+        default: "manual trigger"
 
 jobs:
   test:
