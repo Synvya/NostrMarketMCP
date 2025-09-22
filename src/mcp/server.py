@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -592,40 +592,13 @@ async def mcp_sse_endpoint():
         # Send initial connection message
         yield f"data: {json.dumps({'type': 'connection', 'status': 'connected'})}\n\n"
 
-        # In test environment, send a quick heartbeat then close so clients don't hang
-        if os.getenv("ENVIRONMENT") == "test":
-            # Yield a heartbeat and give the event loop a chance to flush
-            yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': time.time()})}\n\n"
-            await asyncio.sleep(0)
-            return
-
-        # Keep connection alive in non-test environments
+        # Keep connection alive with periodic heartbeats
         try:
             while True:
-                # Send periodic heartbeat
                 yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': time.time()})}\n\n"
                 await asyncio.sleep(30)  # Heartbeat every 30 seconds
         except asyncio.CancelledError:
             yield f"data: {json.dumps({'type': 'connection', 'status': 'disconnected'})}\n\n"
-
-    # In test mode, return a short, finite SSE payload to avoid client timeouts
-    if os.getenv("ENVIRONMENT") == "test":
-        # Return a tiny, finite SSE payload so clients complete immediately.
-        # Use a minimal SSE comment event (starts with ':').
-        payload_bytes = ": test\n\n".encode("utf-8")
-        return Response(
-            content=payload_bytes,
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                # Explicit content length helps clients finish reading promptly
-                "Content-Length": str(len(payload_bytes)),
-                # Close after sending payload to avoid lingering connections
-                "Connection": "close",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "*",
-            },
-        )
 
     return StreamingResponse(
         generate_sse(),
