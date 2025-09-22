@@ -75,7 +75,8 @@ class DatabaseStats(BaseModel):
     profiles_with_picture: int
     profiles_with_nip05: int
     profiles_with_website: int
-    last_updated: int
+    # Allow None to indicate no data yet
+    last_updated: Optional[int]
 
 
 class HealthResponse(BaseModel):

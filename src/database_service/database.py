@@ -783,7 +783,7 @@ class Database:
             ) as cursor:
                 row = await cursor.fetchone()
                 # Use None to explicitly indicate "no data" instead of 0,
-                # which could be misinterpreted as a valid Unix epoch.
+                # which could be misinterpreted as a valid Unix epoch timestamp.
                 stats["last_updated"] = row[0] if row and row[0] else None
 
             return stats
