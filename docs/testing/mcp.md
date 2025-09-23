@@ -14,9 +14,8 @@ The MCP server provides tools and resources for accessing Nostr profile data thr
 
 ## Test Files
 
-- **`tests/test_mcp_server.py`** - Unit tests with mocked database (14 tests)
-- **`tests/test_mcp_integration.py`** - Integration tests with real server (12 tests) ✨ **NEW**
-- **`tests/run_mcp_tests.py`** - Test runner for unit tests
+- **`tests/test_mcp_service_local.py`** – Local tests hitting a running MCP service
+- **`tests/run_mcp_local_tests.sh`** – Spawns DB+MCP locally and runs tests
 
 ## MCP Tools Being Tested
 
@@ -57,50 +56,10 @@ The MCP server provides tools and resources for accessing Nostr profile data thr
 pip install -r requirements.txt
 ```
 
-### Run Unit Tests (Mocked Database)
+### Run Local MCP Tests (spawns services)
 
 ```bash
-# Using the MCP test runner (recommended)
-cd tests && python run_mcp_tests.py
-
-# Using pytest directly
-pytest tests/test_mcp_server.py -v
-```
-
-### Run Integration Tests (Real MCP over HTTP Server) ✨ **NEW**
-
-```bash
-# Run all integration tests
-pytest tests/test_mcp_integration.py -v
-
-# Run specific integration test
-pytest tests/test_mcp_integration.py::TestMCPServerIntegration::test_list_tools -v
-
-# Run with verbose server output
-pytest tests/test_mcp_integration.py -v -s
-```
-
-### Run All MCP Tests
-
-```bash
-# Run both unit and integration tests
-pytest tests/test_mcp_server.py tests/test_mcp_integration.py -v
-
-# Or run separately
-python run_mcp_tests.py && pytest tests/test_mcp_integration.py -v
-```
-
-### Run Specific Tests
-
-```bash
-# Test a specific unit test class
-pytest tests/test_mcp_server.py::TestMCPServer -v
-
-# Test a specific unit test method
-pytest tests/test_mcp_server.py::TestMCPServer::test_search_profiles_success -v
-
-# Test a specific integration test
-pytest tests/test_mcp_integration.py::TestMCPServerIntegration::test_server_connection -v
+bash tests/run_mcp_local_tests.sh
 ```
 
 ## Test Coverage

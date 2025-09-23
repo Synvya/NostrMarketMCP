@@ -13,14 +13,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-# ❷ Start the API in dev mode (auto-reload)
+# ❷ Start the API locally
 ```bash
-cd scripts && python run_api_server.py   # listens on http://127.0.0.1:8080
+python scripts/run_api_service.py   # http://127.0.0.1:8080
 ```
 
-# ❸ Run the full pytest suite
+# ❸ Run the API service tests (spawns services)
 ```bash
-pytest tests/test_api_integration.py -v
+bash tests/run_api_local_tests.sh
 ```
 
 All tests should pass ✔️
@@ -44,9 +44,9 @@ AUTH=()
 # Health check
 curl -s $HOST/health | jq .
 
-# Profile search
+# Profile search (JSON body)
 curl_args=(
-  -s "$HOST/api/search_profiles"
+  -s "$HOST/api/search"
   -H "Content-Type: application/json"
   --data '{"query":"test"}'
 )
@@ -71,8 +71,8 @@ Expected: HTTP 200 and JSON keys `success | stats`.
 
 | File | What it covers |
 |------|----------------|
-| `tests/test_api_integration.py` | Core & security endpoints |
-| `tests/run_tests.py` | Convenience wrapper for CI / local runs |
+| `tests/test_api_service_local.py` | Core & security endpoints (against local server) |
+| `tests/run_api_local_tests.sh` | Spawns DB+API locally and runs tests |
 | `tests/mocks/` | Mock SDK objects (no external network) |
 
 Run everything:
@@ -81,7 +81,7 @@ pytest tests/ -v   # or  python tests/run_tests.py
 ```
 
 ### Coverage highlights
-- Core endpoints (`/health`, `/api/search_profiles`, …)
+- Core endpoints (`/health`, `/api/search`, `/api/search_by_business_type`, …)
 - Auth checks (API Key **or** Bearer token)
 - Input validation / SQL-injection guard
 - Rate limiting path (HTTP 429 scenarios)
@@ -97,11 +97,8 @@ pytest tests/ -v   # or  python tests/run_tests.py
 
 CI snippet (GitHub Actions):
 ```yaml
-- name: Run API tests
-  run: |
-    export HOST="https://api.example.com"
-    export API_KEY="${{ secrets.API_KEY }}"
-    pytest tests/test_api_integration.py -q
+- name: Run API local tests
+  run: bash tests/run_api_local_tests.sh
 ```
 
 ---
@@ -109,7 +106,7 @@ CI snippet (GitHub Actions):
 ## 5 · Common pitfalls & fixes
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `Connection refused` | Server not running / wrong port | `python run_api_server.py` |
+| `Connection refused` | Server not running / wrong port | `python scripts/run_api_service.py` |
 | `401 Unauthorized`   | Missing/incorrect auth header  | Check `API_KEY` or `BEARER_TOKEN` |
 | `429 Too Many Requests` | Hit rate-limit | Increase `RATE_LIMIT_*` env vars or slow down |
 | `500 Internal` | DB missing / corrupted | Delete DB & restart (`DATABASE_PATH`) |

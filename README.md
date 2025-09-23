@@ -14,6 +14,11 @@ NostrMarketMCP ingests Nostr profile events (kind 0) and marketplace stalls (kin
 
 **NEW:** The server now automatically refreshes its database with business profiles from Nostr relays at startup and every 5 minutes, specifically targeting profiles with "L" "business.type" tags.
 
+## Architecture
+
+For a concise overview of how the three services (Database, API, MCP) fit together and deploy to AWS, see:
+- `docs/Architecture.md`
+
 ## Features
 
 - **MCP over HTTP**: JSON-RPC protocol with optional Server-Sent Events streaming ✨ **NEW**
@@ -59,6 +64,12 @@ python scripts/run_api_server.py
 # Available at http://127.0.0.1:8080
 # API Key: local_test_api_key
 ```
+
+### API Chat Authentication (server‑side)
+
+- The API's `/api/chat` endpoint uses a server‑side OpenAI client. Clients do not send any OpenAI key.
+- Set `OPENAI_API_KEY` in the API server environment. If it’s missing, chat requests will fail.
+- Client authentication (if enabled) is via `X-API-Key` or `Authorization: Bearer <token>` — not by passing an OpenAI key.
 
 ### Run MCP over HTTP Server (for Claude/MCP clients) ✨ **UPDATED**
 ```bash

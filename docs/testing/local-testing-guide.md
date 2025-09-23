@@ -31,7 +31,7 @@ LOG_LEVEL=debug
 
 ### 3. Start the API Server
 ```bash
-python scripts/run_api_server.py
+python scripts/run_api_service.py
 ```
 
 You should see:
